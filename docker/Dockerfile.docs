@@ -1,0 +1,32 @@
+# AgentOS Documentation Environment Dockerfile
+FROM python:3.9-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install documentation tools
+RUN pip install --no-cache-dir \
+    mkdocs \
+    mkdocs-material \
+    mkdocs-mermaid2-plugin \
+    mkdocs-git-revision-date-localized-plugin \
+    mkdocs-awesome-pages-plugin \
+    pymdown-extensions
+
+# Set up workspace
+WORKDIR /docs
+
+# Create docs user
+RUN useradd -m -s /bin/bash docs \
+    && chown -R docs:docs /docs
+
+# Switch to docs user
+USER docs
+
+# Expose port for documentation server
+EXPOSE 3000
+
+# Default command
+CMD ["mkdocs", "serve", "--dev-addr=0.0.0.0:3000"]

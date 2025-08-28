@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AgentOS Plugin Framework Permissions -->
+<permissions>
+    <permission name="com.agentos.permission.PLUGIN_REGISTER" >
+        <group gid="agentos_plugins" />
+    </permission>
+    
+    <permission name="com.agentos.permission.PLUGIN_EXECUTE" >
+        <group gid="agentos_plugin_exec" />
+    </permission>
+    
+    <permission name="com.agentos.permission.PLUGIN_MANAGE" >
+        <group gid="agentos_plugin_mgr" />
+    </permission>
+    
+    <permission name="com.agentos.permission.PLUGIN_SECURITY" >
+        <group gid="agentos_plugin_sec" />
+    </permission>
+    
+    <!-- System-level plugin permissions -->
+    <assign-permission name="com.agentos.permission.PLUGIN_REGISTER" uid="system" />
+    <assign-permission name="com.agentos.permission.PLUGIN_EXECUTE" uid="system" />
+    <assign-permission name="com.agentos.permission.PLUGIN_MANAGE" uid="system" />
+    <assign-permission name="com.agentos.permission.PLUGIN_SECURITY" uid="system" />
+    
+    <!-- Feature declarations -->
+    <feature name="com.agentos.plugins" />
+    <feature name="com.agentos.plugins.registry" />
+    <feature name="com.agentos.plugins.security" />
+    <feature name="com.agentos.plugins.hot_swap" />
+    <feature name="com.agentos.plugins.sandboxing" />
+</permissions>

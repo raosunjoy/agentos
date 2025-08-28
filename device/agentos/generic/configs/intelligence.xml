@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AgentOS Intelligence Layer Permissions -->
+<permissions>
+    <permission name="com.agentos.permission.INTELLIGENCE_ACCESS" >
+        <group gid="agentos_intelligence" />
+    </permission>
+    
+    <permission name="com.agentos.permission.NLP_PROCESSING" >
+        <group gid="agentos_nlp" />
+    </permission>
+    
+    <permission name="com.agentos.permission.ORCHESTRATOR_ACCESS" >
+        <group gid="agentos_orchestrator" />
+    </permission>
+    
+    <permission name="com.agentos.permission.CONTEXT_ACCESS" >
+        <group gid="agentos_context" />
+    </permission>
+    
+    <permission name="com.agentos.permission.PREDICTIVE_ACCESS" >
+        <group gid="agentos_predictive" />
+    </permission>
+    
+    <!-- System-level intelligence permissions -->
+    <assign-permission name="com.agentos.permission.INTELLIGENCE_ACCESS" uid="system" />
+    <assign-permission name="com.agentos.permission.NLP_PROCESSING" uid="system" />
+    <assign-permission name="com.agentos.permission.ORCHESTRATOR_ACCESS" uid="system" />
+    
+    <!-- Feature declarations -->
+    <feature name="com.agentos.intelligence" />
+    <feature name="com.agentos.intelligence.nlp" />
+    <feature name="com.agentos.intelligence.orchestrator" />
+    <feature name="com.agentos.intelligence.context" />
+    <feature name="com.agentos.intelligence.predictive" />
+</permissions>

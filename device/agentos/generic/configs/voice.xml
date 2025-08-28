@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AgentOS Voice Interface Permissions -->
+<permissions>
+    <permission name="com.agentos.permission.VOICE_RECOGNITION" >
+        <group gid="agentos_voice" />
+    </permission>
+    
+    <permission name="com.agentos.permission.VOICE_SYNTHESIS" >
+        <group gid="agentos_tts" />
+    </permission>
+    
+    <permission name="com.agentos.permission.AUDIO_PROCESSING" >
+        <group gid="agentos_audio" />
+    </permission>
+    
+    <permission name="com.agentos.permission.WAKE_WORD" >
+        <group gid="agentos_wake" />
+    </permission>
+    
+    <!-- System-level voice permissions -->
+    <assign-permission name="com.agentos.permission.VOICE_RECOGNITION" uid="system" />
+    <assign-permission name="com.agentos.permission.VOICE_SYNTHESIS" uid="system" />
+    <assign-permission name="com.agentos.permission.AUDIO_PROCESSING" uid="audioserver" />
+    <assign-permission name="com.agentos.permission.WAKE_WORD" uid="system" />
+    
+    <!-- Feature declarations -->
+    <feature name="com.agentos.voice" />
+    <feature name="com.agentos.voice.recognition" />
+    <feature name="com.agentos.voice.synthesis" />
+    <feature name="com.agentos.voice.processing" />
+    <feature name="com.agentos.voice.wake_word" />
+    <feature name="com.agentos.voice.elderly_optimized" />
+</permissions>

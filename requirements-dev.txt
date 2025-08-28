@@ -1,0 +1,99 @@
+# AgentOS Development Dependencies
+
+# Core AI/ML dependencies
+numpy>=1.21.0
+scipy>=1.7.0
+scikit-learn>=1.0.0
+torch>=1.12.0
+transformers>=4.20.0
+librosa>=0.9.0
+soundfile>=0.10.0
+speechrecognition>=3.10.0
+pyttsx3>=2.90
+
+# Natural Language Processing
+spacy>=3.4.0
+nltk>=3.8
+textblob>=0.17.0
+
+# Audio processing
+pyaudio>=0.2.11
+webrtcvad>=2.0.10
+noisereduce>=2.0.0
+
+# Android development
+python-for-android>=2022.7.19
+buildozer>=1.4.0
+
+# Development tools
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-xdist>=3.0.0
+pytest-html>=3.1.0
+black>=22.0.0
+flake8>=5.0.0
+mypy>=0.991
+pre-commit>=2.20.0
+isort>=5.10.0
+
+# Documentation
+mkdocs>=1.4.0
+mkdocs-material>=8.5.0
+mkdocs-mermaid2-plugin>=0.6.0
+mkdocs-git-revision-date-localized-plugin>=1.1.0
+
+# Security and compliance
+bandit>=1.7.0
+safety>=2.3.0
+cryptography>=38.0.0
+
+# Performance and profiling
+memory-profiler>=0.60.0
+line-profiler>=4.0.0
+py-spy>=0.3.0
+
+# Testing and quality assurance
+selenium>=4.5.0
+axe-selenium-python>=2.1.6
+locust>=2.12.0
+
+# API and web development
+fastapi>=0.85.0
+uvicorn>=0.18.0
+requests>=2.28.0
+aiohttp>=3.8.0
+
+# Database and storage
+sqlalchemy>=1.4.0
+alembic>=1.8.0
+redis>=4.3.0
+
+# Configuration and environment
+python-dotenv>=0.20.0
+pydantic>=1.10.0
+click>=8.1.0
+
+# Logging and monitoring
+structlog>=22.1.0
+prometheus-client>=0.14.0
+
+# Accessibility testing
+axe-core>=4.5.0
+pa11y>=6.2.0
+
+# Mobile development
+kivy>=2.1.0
+kivymd>=1.0.0
+
+# Plugin development
+pluggy>=1.0.0
+stevedore>=4.0.0
+
+# Internationalization
+babel>=2.10.0
+gettext>=4.0.0
+
+# Development utilities
+watchdog>=2.1.0
+rich>=12.5.0
+typer>=0.6.0

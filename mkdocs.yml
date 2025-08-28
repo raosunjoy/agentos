@@ -1,0 +1,198 @@
+site_name: AgentOS Documentation
+site_description: The Future of Mobile Computing - Agent-Centric, Accessible, Privacy-First
+site_author: AgentOS Contributors
+site_url: https://agentos.org
+
+# Repository
+repo_name: raosunjoy/agentos
+repo_url: https://github.com/raosunjoy/agentos
+edit_uri: edit/main/docs/
+
+# Copyright
+copyright: Copyright &copy; 2025 AgentOS Contributors
+
+# Configuration
+theme:
+  name: material
+  custom_dir: docs/overrides
+  
+  # Static files
+  static_templates:
+    - 404.html
+  
+  # Don't include MkDocs' JavaScript
+  include_search_page: false
+  search_index_only: true
+  
+  # Default values, taken from mkdocs_theme.yml
+  language: en
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - content.tooltips
+    - header.autohide
+    - navigation.expand
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.prune
+    - navigation.sections
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+    - toc.integrate
+  
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  
+  font:
+    text: Roboto
+    code: Roboto Mono
+  
+  favicon: assets/favicon.png
+  icon:
+    logo: logo
+
+# Plugins
+plugins:
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - minify:
+      minify_html: true
+  - git-revision-date-localized:
+      enable_creation_date: true
+  - awesome-pages
+  - mermaid2:
+      arguments:
+        theme: |
+          ^(JSON.parse(__md_get("__palette").index == 1)) ?
+          'dark' : 'light'
+
+# Customization
+extra:
+  analytics:
+    provider: google
+    property: !ENV GOOGLE_ANALYTICS_KEY
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/raosunjoy/agentos
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/agentos
+    - icon: fontawesome/brands/twitter
+      link: https://twitter.com/agentos
+  version:
+    provider: mike
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/extra.js
+  - https://unpkg.com/mermaid@8.13.8/dist/mermaid.min.js
+
+# Extensions
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+      emoji_index: !!python/name:materialx.emoji.twemoji
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: raosunjoy
+      repo: agentos
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Page tree
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Overview: getting-started/overview.md
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quick-start.md
+    - First Steps: getting-started/first-steps.md
+  - User Guide:
+    - Voice Interface: user-guide/voice-interface.md
+    - Accessibility Features: user-guide/accessibility.md
+    - Privacy Controls: user-guide/privacy.md
+    - Caregiver Features: user-guide/caregiver.md
+    - Troubleshooting: user-guide/troubleshooting.md
+  - Developer Guide:
+    - Architecture: developer-guide/architecture.md
+    - Development Setup: developer-guide/setup.md
+    - Building AgentOS: developer-guide/building.md
+    - Testing: developer-guide/testing.md
+    - Contributing: developer-guide/contributing.md
+  - Plugin Development:
+    - Overview: plugin-development/overview.md
+    - Getting Started: plugin-development/getting-started.md
+    - SDK Reference: plugin-development/sdk-reference.md
+    - Best Practices: plugin-development/best-practices.md
+    - Publishing: plugin-development/publishing.md
+  - API Reference:
+    - Intelligence Layer: api-reference/intelligence-layer.md
+    - Plugin Framework: api-reference/plugin-framework.md
+    - Voice Interface: api-reference/voice-interface.md
+    - Security APIs: api-reference/security.md
+  - Design:
+    - Design Principles: design/principles.md
+    - Accessibility Guidelines: design/accessibility.md
+    - Voice Interface Design: design/voice-interface.md
+    - Privacy by Design: design/privacy.md
+  - Community:
+    - Code of Conduct: community/code-of-conduct.md
+    - Governance: community/governance.md
+    - Contributing: community/contributing.md
+    - Security: community/security.md
+  - About:
+    - Project Vision: about/vision.md
+    - Team: about/team.md
+    - Roadmap: about/roadmap.md
+    - License: about/license.md

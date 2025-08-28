@@ -1,0 +1,74 @@
+# AgentOS Production Build Dockerfile
+FROM ubuntu:22.04 as builder
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    git git-lfs \
+    build-essential \
+    python3 python3-pip \
+    nodejs npm \
+    openjdk-11-jdk \
+    curl wget unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up Android SDK for production builds
+ENV ANDROID_HOME=/opt/android-sdk
+ENV PATH=${PATH}:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools
+
+# Install Android SDK
+RUN mkdir -p ${ANDROID_HOME} \
+    && wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip \
+    && unzip -q /tmp/cmdline-tools.zip -d ${ANDROID_HOME} \
+    && mv ${ANDROID_HOME}/cmdline-tools ${ANDROID_HOME}/latest \
+    && mkdir -p ${ANDROID_HOME}/cmdline-tools \
+    && mv ${ANDROID_HOME}/latest ${ANDROID_HOME}/cmdline-tools/ \
+    && rm /tmp/cmdline-tools.zip
+
+# Accept licenses and install SDK components
+RUN yes | sdkmanager --licenses \
+    && sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+
+# Copy source code
+WORKDIR /workspace
+COPY . .
+
+# Install dependencies
+RUN pip3 install -r requirements-dev.txt \
+    && npm install
+
+# Build AgentOS
+RUN ./scripts/build.sh --production
+
+# Production runtime image
+FROM ubuntu:22.04
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy built artifacts from builder stage
+COPY --from=builder /workspace/build /opt/agentos
+COPY --from=builder /workspace/scripts /opt/agentos/scripts
+
+# Set up runtime environment
+WORKDIR /opt/agentos
+
+# Create runtime user
+RUN useradd -m -s /bin/bash agentos \
+    && chown -R agentos:agentos /opt/agentos
+
+USER agentos
+
+# Expose necessary ports
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Default command
+CMD ["./scripts/start.sh"]

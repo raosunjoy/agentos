@@ -1,0 +1,63 @@
+# AgentOS Testing Environment Dockerfile
+FROM ubuntu:22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install testing dependencies
+RUN apt-get update && apt-get install -y \
+    # Basic tools
+    curl wget git \
+    # Python testing
+    python3 python3-pip python3-venv \
+    # Node.js testing
+    nodejs npm \
+    # Browser testing (for accessibility tests)
+    chromium-browser firefox \
+    # Audio testing
+    pulseaudio alsa-utils \
+    # Security testing tools
+    nmap nikto \
+    # Performance testing
+    stress-ng htop \
+    # Accessibility testing
+    espeak espeak-data \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python testing packages
+RUN pip3 install --no-cache-dir \
+    pytest \
+    pytest-cov \
+    pytest-xdist \
+    pytest-html \
+    selenium \
+    axe-selenium-python \
+    locust \
+    bandit \
+    safety
+
+# Install Node.js testing packages
+RUN npm install -g \
+    jest \
+    cypress \
+    @axe-core/cli \
+    lighthouse \
+    pa11y
+
+# Set up workspace
+WORKDIR /workspace
+
+# Create test user
+RUN useradd -m -s /bin/bash tester \
+    && usermod -aG audio tester
+
+# Switch to test user
+USER tester
+
+# Set environment variables for testing
+ENV CI=true
+ENV COVERAGE_REPORT=true
+ENV HEADLESS=true
+
+# Default command
+CMD ["/bin/bash"]
