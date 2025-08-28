@@ -1,0 +1,415 @@
+name: AgentOS CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  release:
+    types: [ published ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Code Quality and Security Checks
+  quality-checks:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        lfs: true
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+    
+    - name: Run Black code formatter check
+      run: black --check --diff .
+    
+    - name: Run Flake8 linter
+      run: flake8 src/ tests/
+    
+    - name: Run MyPy type checker
+      run: mypy src/
+    
+    - name: Run Bandit security linter
+      run: bandit -r src/
+    
+    - name: Run Safety security checker
+      run: safety check
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install Node.js dependencies
+      run: npm ci
+    
+    - name: Run ESLint
+      run: npm run lint
+    
+    - name: Run Prettier check
+      run: npx prettier --check "src/**/*.{js,ts,json}"
+
+  # Unit Tests
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10']
+        node-version: ['16', '18', '20']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+    
+    - name: Run Python unit tests
+      run: |
+        pytest tests/unit/ \
+          --cov=src/ \
+          --cov-report=xml \
+          --cov-report=html \
+          --junit-xml=test-results/python-unit-tests.xml
+    
+    - name: Set up Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Install Node.js dependencies
+      run: npm ci
+    
+    - name: Run JavaScript/TypeScript unit tests
+      run: npm test -- --coverage --watchAll=false
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.xml,./coverage/lcov.info
+        flags: unittests
+        name: codecov-umbrella
+
+  # Integration Tests
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    services:
+      docker:
+        image: docker:dind
+        options: --privileged
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build development environment
+      run: |
+        docker-compose build agentos-dev
+        docker-compose up -d agentos-dev
+    
+    - name: Wait for services to be ready
+      run: |
+        timeout 300 bash -c 'until docker-compose exec -T agentos-dev echo "ready"; do sleep 5; done'
+    
+    - name: Run integration tests
+      run: |
+        docker-compose exec -T agentos-dev ./scripts/test.sh integration
+    
+    - name: Run accessibility tests
+      run: |
+        docker-compose exec -T agentos-dev ./scripts/test.sh accessibility
+    
+    - name: Run security tests
+      run: |
+        docker-compose exec -T agentos-dev ./scripts/test.sh security
+    
+    - name: Collect test results
+      if: always()
+      run: |
+        docker-compose exec -T agentos-dev cp -r test-results /workspace/
+        docker-compose down
+
+  # AOSP Build Test
+  aosp-build:
+    name: AOSP Build Test
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    if: github.event_name == 'push' || github.event_name == 'release'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+    
+    - name: Free up disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+    
+    - name: Set up AOSP build environment
+      run: |
+        docker-compose build aosp-builder
+        docker-compose up -d aosp-builder
+    
+    - name: Initialize AOSP repository
+      run: |
+        docker-compose exec -T aosp-builder ./scripts/init-aosp.sh
+    
+    - name: Build AgentOS (minimal)
+      run: |
+        docker-compose exec -T aosp-builder ./scripts/build.sh --minimal
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: agentos-build-${{ github.sha }}
+        path: build/
+        retention-days: 7
+
+  # Performance Tests
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+    
+    - name: Set up performance testing environment
+      run: |
+        docker-compose up -d agentos-dev
+        docker-compose exec -T agentos-dev ./scripts/setup-performance-tests.sh
+    
+    - name: Run performance benchmarks
+      run: |
+        docker-compose exec -T agentos-dev ./scripts/test.sh performance
+    
+    - name: Generate performance report
+      run: |
+        docker-compose exec -T agentos-dev ./scripts/generate-performance-report.sh
+    
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results-${{ github.sha }}
+        path: test-results/performance/
+
+  # Security Scan
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    - name: Run CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+      with:
+        languages: python, javascript
+
+  # Documentation Build
+  docs-build:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install documentation dependencies
+      run: |
+        pip install mkdocs mkdocs-material mkdocs-mermaid2-plugin
+    
+    - name: Build documentation
+      run: |
+        mkdocs build --strict
+    
+    - name: Deploy to GitHub Pages
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./site
+
+  # Container Build and Push
+  container-build:
+    name: Build and Push Container Images
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    if: github.event_name == 'push' || github.event_name == 'release'
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.production
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # Release
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [aosp-build, performance-tests, security-scan, docs-build, container-build]
+    if: github.event_name == 'release'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+    
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: agentos-build-${{ github.sha }}
+        path: ./release-artifacts/
+    
+    - name: Create release package
+      run: |
+        cd release-artifacts
+        tar -czf ../agentos-${{ github.event.release.tag_name }}.tar.gz *
+        cd ..
+        sha256sum agentos-${{ github.event.release.tag_name }}.tar.gz > agentos-${{ github.event.release.tag_name }}.tar.gz.sha256
+    
+    - name: Upload release assets
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./agentos-${{ github.event.release.tag_name }}.tar.gz
+        asset_name: agentos-${{ github.event.release.tag_name }}.tar.gz
+        asset_content_type: application/gzip
+    
+    - name: Upload checksum
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./agentos-${{ github.event.release.tag_name }}.tar.gz.sha256
+        asset_name: agentos-${{ github.event.release.tag_name }}.tar.gz.sha256
+        asset_content_type: text/plain
+
+  # Notification
+  notify:
+    name: Notify Community
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: always() && github.event_name == 'release'
+    
+    steps:
+    - name: Notify Discord
+      if: success()
+      run: |
+        curl -H "Content-Type: application/json" \
+             -X POST \
+             -d '{"content":"🚀 AgentOS ${{ github.event.release.tag_name }} has been released! Check it out: ${{ github.event.release.html_url }}"}' \
+             ${{ secrets.DISCORD_WEBHOOK_URL }}
+    
+    - name: Update project status
+      if: success()
+      run: |
+        echo "Release ${{ github.event.release.tag_name }} completed successfully"
