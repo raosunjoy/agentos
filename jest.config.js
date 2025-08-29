@@ -1,7 +1,7 @@
 /** @type {import('jest').Config} */
 module.exports = {
   // Test environment
-  testEnvironment: 'node',
+  testEnvironment: 'jsdom',
   
   // Preset
   preset: 'ts-jest',
