@@ -30,15 +30,6 @@ export { createExamplePlugin } from './examples/example-plugin';
 export const PLUGIN_FRAMEWORK_VERSION = '1.0.0';
 export const SUPPORTED_AGENTOS_VERSIONS = ['1.0.0', '1.0.x', '^1.0.0'];
 
-/**
- * Initialize the plugin framework
- */
-export async function initializePluginFramework(config: PluginFrameworkConfig): Promise<PluginManager> {
-  const pluginManager = new PluginManager(config);
-  await pluginManager.initialize();
-  return pluginManager;
-}
-
 export interface PluginFrameworkConfig {
   registryPath: string;
   pluginPaths: string[];
@@ -52,4 +43,13 @@ export interface PluginFrameworkConfig {
     maxStorageMB: number;
     maxExecutionTimeMs: number;
   };
+}
+
+/**
+ * Initialize the plugin framework
+ */
+export async function initializePluginFramework(config: PluginFrameworkConfig): Promise<PluginManager> {
+  const pluginManager = new PluginManager(config);
+  await pluginManager.initialize();
+  return pluginManager;
 }

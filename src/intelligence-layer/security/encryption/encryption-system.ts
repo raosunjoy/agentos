@@ -1,6 +1,6 @@
 import { KeyManager } from './key-manager';
 import { EncryptedStorage } from './encrypted-storage';
-import { SecureCommunicationManager } from './secure-communication';
+import { SecureCommunicationManager, EncryptedMessage, DecryptedMessage } from './secure-communication';
 import { PrivacyPreservingProcessor } from './privacy-preserving';
 import { EncryptionMetrics, SecurityAuditLog } from './types';
 
@@ -220,17 +220,17 @@ export class EncryptionSystem {
    * Send encrypted message
    */
   async sendSecureMessage(
-    channelId: string, 
+    channelId: string,
     message: string | ArrayBuffer,
     associatedData?: ArrayBuffer
-  ) {
+  ): Promise<EncryptedMessage | null> {
     return await this.communicationManager.encryptMessage(channelId, message, associatedData);
   }
 
   /**
    * Receive and decrypt message
    */
-  async receiveSecureMessage(encryptedMessage: any) {
+  async receiveSecureMessage(encryptedMessage: EncryptedMessage): Promise<DecryptedMessage | null> {
     return await this.communicationManager.decryptMessage(encryptedMessage);
   }
 

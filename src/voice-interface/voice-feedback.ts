@@ -37,10 +37,11 @@ export class VoiceFeedback extends EventEmitter {
 
       // Find appropriate voice
       const voices = this.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(voice => 
-        voice.lang.startsWith(settings.language.split('-')[0]) && 
+      const languageCode = settings.language?.split('-')[0];
+      const preferredVoice = languageCode ? voices.find(voice =>
+        voice.lang.startsWith(languageCode) &&
         voice.localService
-      );
+      ) : undefined;
       
       if (preferredVoice) {
         utterance.voice = preferredVoice;
@@ -52,13 +53,13 @@ export class VoiceFeedback extends EventEmitter {
       };
 
       utterance.onend = () => {
-        this.currentUtterance = undefined;
+        this.currentUtterance = null;
         this.emit('speechEnd', text);
         resolve();
       };
 
       utterance.onerror = (event) => {
-        this.currentUtterance = undefined;
+        this.currentUtterance = null;
         this.emit('speechError', event.error);
         reject(new Error(`Speech synthesis error: ${event.error}`));
       };
@@ -182,7 +183,7 @@ export class VoiceFeedback extends EventEmitter {
     }
     
     if (this.currentUtterance) {
-      this.currentUtterance = undefined;
+      this.currentUtterance = null;
       this.emit('speechStopped');
     }
   }
@@ -253,9 +254,9 @@ export class VoiceFeedback extends EventEmitter {
   public getVoicesForLanguage(language: string): SpeechSynthesisVoice[] {
     const voices = this.getAvailableVoices();
     const languageCode = language.split('-')[0];
-    
-    return voices.filter(voice => 
-      voice.lang.startsWith(languageCode)
+
+    return voices.filter(voice =>
+      voice.lang.startsWith(languageCode || '')
     );
   }
 

@@ -10,6 +10,8 @@ export interface Intent {
   parameters: IntentParameter[];
   requiredPermissions: string[];
   category: string;
+  keywords?: string[];
+  patterns?: string[];
 }
 
 export interface IntentParameter {
@@ -20,13 +22,29 @@ export interface IntentParameter {
   validation?: string;
 }
 
-export interface Entity {
+export interface Parameter {
+  name: string;
   type: string;
-  value: string;
+  required?: boolean;
+  description?: string;
+}
+
+export type EntityType = 'date' | 'time' | 'number' | 'location' | 'person' | 'email' | 'phone' | 'url' | string;
+
+export interface EntityMetadata {
+  parameterName?: string;
+  extractionMethod?: string;
+  originalText?: string;
+  pattern?: string;
+}
+
+export interface Entity {
+  type: EntityType;
+  value: string | number | Date;
   confidence: number;
   startIndex: number;
   endIndex: number;
-  metadata?: Record<string, any>;
+  metadata?: EntityMetadata;
 }
 
 export interface IntentResult {
@@ -37,12 +55,19 @@ export interface IntentResult {
   ambiguousIntents?: IntentResult[];
 }
 
+export interface ClarificationOptions {
+  message: string;
+  options: Array<{ intentId: string; description: string; confidence: number }>;
+  timeoutMs: number;
+}
+
 export interface ProcessingResult {
   success: boolean;
   result?: IntentResult;
+  alternatives?: IntentResult[];
   error?: string;
   needsClarification?: boolean;
-  clarificationOptions?: IntentResult[];
+  clarificationOptions?: ClarificationOptions;
   language: string;
   processingTime: number;
 }
@@ -67,6 +92,7 @@ export interface NLPConfig {
 export interface TrainingExample {
   text: string;
   intent: string;
+  intentId?: string;
   entities: Entity[];
   language: string;
 }
@@ -76,6 +102,9 @@ export interface ModelMetrics {
   precision: number;
   recall: number;
   f1Score: number;
-  confusionMatrix: number[][];
-  lastUpdated: Date;
+  totalIntents?: number;
+  trainingExamples?: number;
+  lastTrained?: number;
+  confusionMatrix?: number[][];
+  lastUpdated?: Date;
 }

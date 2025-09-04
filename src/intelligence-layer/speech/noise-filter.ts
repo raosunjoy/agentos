@@ -22,10 +22,10 @@ export class NoiseFilter {
    * Apply comprehensive noise filtering to audio
    */
   async filterNoise(audioData: Float32Array): Promise<NoiseFilterResult> {
-    const startTime = Date.now();
+    const _startTime = Date.now();
 
     // Calculate initial noise level
-    const initialNoiseLevel = this.calculateNoiseLevel(audioData);
+    const _initialNoiseLevel = this.calculateNoiseLevel(audioData);
 
     // Apply multiple filtering stages
     let filtered = new Float32Array(audioData);
@@ -77,13 +77,14 @@ export class NoiseFilter {
     // Update noise profile with new background audio
     const newNoiseSpectrum = this.calculateNoiseSpectrum(audioData);
     
-    if (this.noiseProfile) {
+    if (this.noiseProfile && newNoiseSpectrum) {
       // Exponential moving average for noise profile adaptation
       const alpha = 0.1;
-      for (let i = 0; i < this.noiseProfile.length; i++) {
+      const minLength = Math.min(this.noiseProfile.length, newNoiseSpectrum.length);
+      for (let i = 0; i < minLength; i++) {
         this.noiseProfile[i] = (1 - alpha) * this.noiseProfile[i] + alpha * newNoiseSpectrum[i];
       }
-    } else {
+    } else if (newNoiseSpectrum) {
       this.noiseProfile = newNoiseSpectrum;
     }
   }
@@ -107,11 +108,12 @@ export class NoiseFilter {
       energy = Math.sqrt(energy / (windowEnd - windowStart));
       
       // Apply adaptive gating
-      if (energy > this.adaptiveThreshold) {
+      const threshold = this.adaptiveThreshold || 0.02;
+      if (energy > threshold) {
         filtered[i] = audioData[i];
       } else {
         // Soft gating to avoid artifacts
-        const gateRatio = energy / this.adaptiveThreshold;
+        const gateRatio = energy / threshold;
         filtered[i] = audioData[i] * Math.min(1, gateRatio * gateRatio);
       }
     }
@@ -145,8 +147,8 @@ export class NoiseFilter {
       const cleanFrame = this.ifft(cleanSpectrum);
       
       // Overlap-add reconstruction
-      for (let i = 0; i < cleanFrame.length; i++) {
-        if (frameStart + i < filtered.length) {
+      for (let i = 0; i < cleanFrame.length && i < frameSize; i++) {
+        if (frameStart + i < filtered.length && cleanFrame[i] !== undefined) {
           filtered[frameStart + i] += cleanFrame[i] * this.getWindow(i, frameSize);
         }
       }
@@ -168,7 +170,7 @@ export class NoiseFilter {
       
       // Estimate signal and noise power
       let signalPower = 0;
-      let noisePower = this.adaptiveThreshold * this.adaptiveThreshold;
+      let noisePower = (this.adaptiveThreshold || 0.02) * (this.adaptiveThreshold || 0.02);
       
       for (let j = windowStart; j < windowEnd; j++) {
         signalPower += audioData[j] * audioData[j];

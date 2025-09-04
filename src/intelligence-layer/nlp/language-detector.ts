@@ -1,95 +1,72 @@
 /**
- * Language Detector - Multi-language support framework
- * 
- * Detects the language of user input and provides language-specific
- * processing capabilities with elderly-optimized features.
+ * Language Detector - Detects the language of input text
+ * Uses rule-based and statistical approaches for language identification
  */
 
-import { LanguageConfig, NLPConfig } from './types';
+export interface Language {
+  code: string;
+  name: string;
+  enabled: boolean;
+  confidenceThreshold: number;
+  charset?: string;
+}
+
+export interface DetectionResult {
+  language: string;
+  confidence: number;
+  alternatives: Array<{ language: string; confidence: number }>;
+}
 
 export class LanguageDetector {
-  private config: NLPConfig;
-  private languageModels: Map<string, LanguageModel> = new Map();
-  private userLanguagePreference?: string;
+  private languages: Map<string, Language> = new Map();
+  private userPreferences: Map<string, string> = new Map();
+  private commonWords: Map<string, string[]> = new Map();
 
-  constructor(config: NLPConfig) {
-    this.config = config;
-    this.initializeLanguageModels();
+  constructor(private config?: { defaultLanguage?: string }) {
+    this.initializeLanguages();
+    this.initializeCommonWords();
   }
 
   /**
    * Detect the language of input text
    */
   async detectLanguage(text: string): Promise<string> {
-    // Use user preference if available and confident
-    if (this.userLanguagePreference) {
-      const confidence = await this.calculateLanguageConfidence(text, this.userLanguagePreference);
-      if (confidence > 0.7) {
-        return this.userLanguagePreference;
-      }
+    if (!text || text.trim().length === 0) {
+      return this.config?.defaultLanguage || 'en';
     }
 
-    // Detect language using multiple methods
-    const candidates = await this.getLanguageCandidates(text);
-    
-    // Return the most confident language that's enabled
-    for (const candidate of candidates) {
-      const languageConfig = this.config.languages.find(lang => lang.code === candidate.language);
-      if (languageConfig?.enabled) {
-        return candidate.language;
-      }
+    const normalizedText = this.normalizeText(text);
+
+    // Check user preference first
+    const userPreferred = this.getUserPreferredLanguage();
+    if (userPreferred) {
+      return userPreferred;
     }
 
-    // Fallback to default language
-    return this.config.defaultLanguage;
-  }
-
-  /**
-   * Set user's preferred language
-   */
-  setUserLanguagePreference(languageCode: string): void {
-    const languageConfig = this.config.languages.find(lang => lang.code === languageCode);
-    if (languageConfig?.enabled) {
-      this.userLanguagePreference = languageCode;
+    // Try rule-based detection
+    const ruleBased = this.detectWithRules(normalizedText);
+    if (ruleBased.confidence > 0.8) {
+      return ruleBased.language;
     }
+
+    // Try statistical detection
+    const statistical = this.detectWithStatistics(normalizedText);
+
+    // Return the most confident result
+    if (ruleBased.confidence > statistical.confidence) {
+      return ruleBased.language;
+    }
+
+    return statistical.language;
   }
 
   /**
-   * Get language-specific processing configuration
+   * Preprocess text for the detected language
    */
-  getLanguageConfig(languageCode: string): LanguageConfig | undefined {
-    return this.config.languages.find(lang => lang.code === languageCode);
-  }
+  preprocessForLanguage(text: string, language: string): string {
+    let processed = text.toLowerCase().trim();
 
-  /**
-   * Check if a language is supported
-   */
-  isLanguageSupported(languageCode: string): boolean {
-    const config = this.getLanguageConfig(languageCode);
-    return config?.enabled || false;
-  }
-
-  /**
-   * Get all supported languages
-   */
-  getSupportedLanguages(): LanguageConfig[] {
-    return this.config.languages.filter(lang => lang.enabled);
-  }
-
-  /**
-   * Preprocess text for language-specific optimizations
-   */
-  preprocessForLanguage(text: string, languageCode: string): string {
-    const model = this.languageModels.get(languageCode);
-    if (!model) return text;
-
-    let processed = text.trim();
-
-    // Apply language-specific preprocessing
-    switch (languageCode) {
-      case 'en':
-        processed = this.preprocessEnglish(processed);
-        break;
+    switch (language) {
       case 'es':
         processed = this.preprocessSpanish(processed);
         break;
@@ -102,239 +79,364 @@ export class LanguageDetector {
       case 'zh':
         processed = this.preprocessChinese(processed);
         break;
+      case 'en':
       default:
-        processed = this.preprocessGeneric(processed);
+        processed = this.preprocessEnglish(processed);
+        break;
     }
 
     return processed;
   }
 
   /**
-   * Get language candidates with confidence scores
+   * Set user's preferred language
    */
-  private async getLanguageCandidates(text: string): Promise<Array<{language: string, confidence: number}>> {
-    const candidates: Array<{language: string, confidence: number}> = [];
+  setUserLanguagePreference(userId: string, language: string): void {
+    if (this.languages.has(language)) {
+      this.userPreferences.set(userId, language);
+    }
+  }
 
-    // Simple character-based detection
-    for (const languageConfig of this.config.languages) {
-      if (languageConfig.enabled) {
-        const confidence = await this.calculateLanguageConfidence(text, languageConfig.code);
-        candidates.push({
-          language: languageConfig.code,
-          confidence
-        });
+  /**
+   * Get user's preferred language
+   */
+  getUserPreferredLanguage(userId?: string): string | null {
+    if (!userId) {
+      return null;
+    }
+    return this.userPreferences.get(userId) || null;
+  }
+
+  /**
+   * Get all supported languages
+   */
+  getSupportedLanguages(): Language[] {
+    return Array.from(this.languages.values());
+  }
+
+  /**
+   * Get language by code
+   */
+  getLanguage(code: string): Language | null {
+    return this.languages.get(code) || null;
+  }
+
+  /**
+   * Add or update a language
+   */
+  registerLanguage(language: Language): void {
+    this.languages.set(language.code, language);
+  }
+
+  /**
+   * Remove a language
+   */
+  removeLanguage(code: string): boolean {
+    return this.languages.delete(code);
+  }
+
+  /**
+   * Initialize supported languages
+   */
+  private initializeLanguages(): void {
+    const defaultLanguages: Language[] = [
+      {
+        code: 'en',
+        name: 'English',
+        enabled: true,
+        confidenceThreshold: 0.7
+      },
+      {
+        code: 'es',
+        name: 'Spanish',
+        enabled: true,
+        confidenceThreshold: 0.7
+      },
+      {
+        code: 'fr',
+        name: 'French',
+        enabled: true,
+        confidenceThreshold: 0.7
+      },
+      {
+        code: 'de',
+        name: 'German',
+        enabled: true,
+        confidenceThreshold: 0.7
+      },
+      {
+        code: 'zh',
+        name: 'Chinese',
+        enabled: false,
+        confidenceThreshold: 0.6,
+        charset: 'utf-8'
+      },
+      {
+        code: 'ja',
+        name: 'Japanese',
+        enabled: false,
+        confidenceThreshold: 0.6,
+        charset: 'utf-8'
+      },
+      {
+        code: 'ko',
+        name: 'Korean',
+        enabled: false,
+        confidenceThreshold: 0.6,
+        charset: 'utf-8'
+      },
+      {
+        code: 'pt',
+        name: 'Portuguese',
+        enabled: false,
+        confidenceThreshold: 0.7
+      },
+      {
+        code: 'it',
+        name: 'Italian',
+        enabled: false,
+        confidenceThreshold: 0.7
+      },
+      {
+        code: 'ru',
+        name: 'Russian',
+        enabled: false,
+        confidenceThreshold: 0.6,
+        charset: 'utf-8'
+      }
+    ];
+
+    defaultLanguages.forEach(lang => this.languages.set(lang.code, lang));
+  }
+
+  /**
+   * Initialize common words for statistical detection
+   */
+  private initializeCommonWords(): void {
+    this.commonWords.set('en', [
+      'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+      'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them',
+      'this', 'that', 'these', 'those', 'what', 'when', 'where', 'why', 'how', 'who'
+    ]);
+
+    this.commonWords.set('es', [
+      'el', 'la', 'los', 'las', 'y', 'o', 'pero', 'en', 'sobre', 'a', 'para', 'de',
+      'con', 'por', 'yo', 'tú', 'él', 'ella', 'nosotros', 'ellos', 'qué', 'cuándo',
+      'dónde', 'por', 'qué', 'cómo', 'quién', 'este', 'esta', 'estos', 'estas'
+    ]);
+
+    this.commonWords.set('fr', [
+      'le', 'la', 'les', 'et', 'ou', 'mais', 'dans', 'sur', 'à', 'pour', 'de', 'avec',
+      'par', 'je', 'tu', 'il', 'elle', 'nous', 'vous', 'ils', 'elles', 'que', 'quand',
+      'où', 'pourquoi', 'comment', 'qui', 'ce', 'cette', 'ces'
+    ]);
+
+    this.commonWords.set('de', [
+      'der', 'die', 'das', 'und', 'oder', 'aber', 'in', 'auf', 'an', 'zu', 'für', 'von',
+      'mit', 'durch', 'ich', 'du', 'er', 'sie', 'wir', 'ihr', 'sie', 'was', 'wann',
+      'wo', 'warum', 'wie', 'wer', 'dieser', 'diese', 'dieses', 'diese'
+    ]);
+  }
+
+  /**
+   * Normalize text for processing
+   */
+  private normalizeText(text: string): string {
+    // Remove punctuation and numbers
+    return text.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\d+/g, ' ').trim();
+  }
+
+  /**
+   * Detect language using rule-based approach
+   */
+  private detectWithRules(text: string): DetectionResult {
+    const results: Array<{ language: string; confidence: number }> = [];
+
+    // Character-based detection
+    const charResults = this.detectByCharacters(text);
+    results.push(...charResults);
+
+    // Script-based detection
+    const scriptResult = this.detectByScript(text);
+    if (scriptResult) {
+      results.push(scriptResult);
+    }
+
+    // Sort by confidence and return top result
+    results.sort((a, b) => b.confidence - a.confidence);
+
+    return {
+      language: results[0]?.language || 'en',
+      confidence: results[0]?.confidence || 0,
+      alternatives: results.slice(1)
+    };
+  }
+
+  /**
+   * Detect language by character analysis
+   */
+  private detectByCharacters(text: string): Array<{ language: string; confidence: number }> {
+    const results: Array<{ language: string; confidence: number }> = [];
+
+    // Spanish-specific characters
+    const spanishChars = /[ñáéíóúü]/gi;
+    if (spanishChars.test(text)) {
+      results.push({ language: 'es', confidence: 0.9 });
+    }
+
+    // French-specific characters
+    const frenchChars = /[àâäéèêëïîôöùûüÿç]/gi;
+    if (frenchChars.test(text)) {
+      results.push({ language: 'fr', confidence: 0.9 });
+    }
+
+    // German-specific characters
+    const germanChars = /[äöüß]/gi;
+    if (germanChars.test(text)) {
+      results.push({ language: 'de', confidence: 0.9 });
+    }
+
+    // Chinese characters
+    const chineseChars = /[\u4e00-\u9fff]/g;
+    if (chineseChars.test(text)) {
+      const chineseRatio = (text.match(chineseChars) || []).length / text.length;
+      results.push({ language: 'zh', confidence: Math.min(chineseRatio * 2, 1) });
+    }
+
+    return results;
+  }
+
+  /**
+   * Detect language by script analysis
+   */
+  private detectByScript(text: string): { language: string; confidence: number } | null {
+    // Cyrillic (Russian, etc.)
+    if (/[\u0400-\u04ff]/g.test(text)) {
+      return { language: 'ru', confidence: 0.8 };
+    }
+
+    // Japanese Hiragana/Katakana
+    if (/[\u3040-\u309f\u30a0-\u30ff]/g.test(text)) {
+      return { language: 'ja', confidence: 0.8 };
+    }
+
+    // Korean Hangul
+    if (/[\uac00-\ud7af]/g.test(text)) {
+      return { language: 'ko', confidence: 0.8 };
+    }
+
+    return null;
+  }
+
+  /**
+   * Detect language using statistical approach
+   */
+  private detectWithStatistics(text: string): DetectionResult {
+    const words = text.split(/\s+/).filter(word => word.length > 0);
+    if (words.length === 0) {
+      return { language: 'en', confidence: 0, alternatives: [] };
+    }
+
+    const results: Array<{ language: string; confidence: number }> = [];
+
+    for (const [langCode, commonWords] of this.commonWords.entries()) {
+      const language = this.languages.get(langCode);
+      if (!language?.enabled) {
+        continue;
+      }
+
+      let matches = 0;
+      for (const word of words.slice(0, 20)) { // Check first 20 words
+        if (commonWords.includes(word.toLowerCase())) {
+          matches++;
+        }
+      }
+
+      const confidence = matches / Math.min(words.length, 20);
+      if (confidence > 0.1) { // Only consider if there's some confidence
+        results.push({ language: langCode, confidence });
       }
     }
 
     // Sort by confidence
-    candidates.sort((a, b) => b.confidence - a.confidence);
-    return candidates;
+    results.sort((a, b) => b.confidence - a.confidence);
+
+    return {
+      language: results[0]?.language || 'en',
+      confidence: results[0]?.confidence || 0,
+      alternatives: results.slice(1)
+    };
   }
 
   /**
-   * Calculate confidence score for a specific language
-   */
-  private async calculateLanguageConfidence(text: string, languageCode: string): Promise<number> {
-    const model = this.languageModels.get(languageCode);
-    if (!model) return 0;
-
-    let confidence = 0;
-
-    // Character frequency analysis
-    confidence += this.analyzeCharacterFrequency(text, model) * 0.4;
-
-    // Common word analysis
-    confidence += this.analyzeCommonWords(text, model) * 0.4;
-
-    // Pattern analysis
-    confidence += this.analyzeLanguagePatterns(text, model) * 0.2;
-
-    return Math.min(confidence, 1.0);
-  }
-
-  /**
-   * Analyze character frequency for language detection
-   */
-  private analyzeCharacterFrequency(text: string, model: LanguageModel): number {
-    const textChars = text.toLowerCase().replace(/[^a-zA-ZÀ-ÿ\u4e00-\u9fff]/g, '');
-    if (textChars.length === 0) return 0;
-
-    let score = 0;
-    const charCounts = new Map<string, number>();
-
-    // Count characters
-    for (const char of textChars) {
-      charCounts.set(char, (charCounts.get(char) || 0) + 1);
-    }
-
-    // Compare with expected frequencies
-    for (const [char, count] of charCounts) {
-      const frequency = count / textChars.length;
-      const expectedFrequency = model.characterFrequencies.get(char) || 0;
-      const difference = Math.abs(frequency - expectedFrequency);
-      score += Math.max(0, 1 - difference * 10); // Penalty for large differences
-    }
-
-    return score / Math.max(charCounts.size, 1);
-  }
-
-  /**
-   * Analyze common words for language detection
-   */
-  private analyzeCommonWords(text: string, model: LanguageModel): number {
-    const words = text.toLowerCase().split(/\s+/);
-    if (words.length === 0) return 0;
-
-    let matchCount = 0;
-    for (const word of words) {
-      if (model.commonWords.has(word)) {
-        matchCount++;
-      }
-    }
-
-    return matchCount / words.length;
-  }
-
-  /**
-   * Analyze language-specific patterns
-   */
-  private analyzeLanguagePatterns(text: string, model: LanguageModel): number {
-    let score = 0;
-    let patternCount = 0;
-
-    for (const pattern of model.patterns) {
-      const matches = text.match(pattern);
-      if (matches) {
-        score += matches.length;
-      }
-      patternCount++;
-    }
-
-    return patternCount > 0 ? Math.min(score / patternCount, 1) : 0;
-  }
-
-  /**
-   * English-specific preprocessing
+   * Preprocess English text
    */
   private preprocessEnglish(text: string): string {
-    return text
-      .toLowerCase()
-      .replace(/won't/g, 'will not')
-      .replace(/can't/g, 'cannot')
-      .replace(/n't/g, ' not')
-      .replace(/'ll/g, ' will')
-      .replace(/'re/g, ' are')
-      .replace(/'ve/g, ' have')
-      .replace(/'d/g, ' would')
-      .replace(/\s+/g, ' ');
+    // Remove extra whitespace
+    return text.replace(/\s+/g, ' ').trim();
   }
 
   /**
-   * Spanish-specific preprocessing
+   * Preprocess Spanish text
    */
   private preprocessSpanish(text: string): string {
+    // Normalize accented characters
     return text
-      .toLowerCase()
-      .replace(/¿/g, '')
-      .replace(/¡/g, '')
+      .replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i')
+      .replace(/ó/g, 'o').replace(/ú/g, 'u').replace(/ü/g, 'u')
       .replace(/ñ/g, 'n')
-      .replace(/[áàâãä]/g, 'a')
-      .replace(/[éèêë]/g, 'e')
-      .replace(/[íìîï]/g, 'i')
-      .replace(/[óòôõö]/g, 'o')
-      .replace(/[úùûü]/g, 'u')
-      .replace(/\s+/g, ' ');
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   /**
-   * French-specific preprocessing
+   * Preprocess French text
    */
   private preprocessFrench(text: string): string {
+    // Normalize accented characters
     return text
-      .toLowerCase()
-      .replace(/[àáâãäå]/g, 'a')
-      .replace(/[èéêë]/g, 'e')
-      .replace(/[ìíîï]/g, 'i')
-      .replace(/[òóôõö]/g, 'o')
-      .replace(/[ùúûü]/g, 'u')
-      .replace(/ç/g, 'c')
-      .replace(/\s+/g, ' ');
+      .replace(/[àâä]/g, 'a').replace(/[éèêë]/g, 'e')
+      .replace(/[ïî]/g, 'i').replace(/[ôö]/g, 'o')
+      .replace(/[ùûü]/g, 'u').replace(/ÿ/g, 'y').replace(/ç/g, 'c')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   /**
-   * German-specific preprocessing
+   * Preprocess German text
    */
   private preprocessGerman(text: string): string {
+    // Normalize umlauts
     return text
-      .toLowerCase()
-      .replace(/ä/g, 'ae')
-      .replace(/ö/g, 'oe')
-      .replace(/ü/g, 'ue')
+      .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')
       .replace(/ß/g, 'ss')
-      .replace(/\s+/g, ' ');
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   /**
-   * Chinese-specific preprocessing
+   * Preprocess Chinese text
    */
   private preprocessChinese(text: string): string {
-    // Remove spaces between Chinese characters
-    return text.replace(/(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])/g, '');
+    // For Chinese, we keep the characters as-is but normalize whitespace
+    return text.replace(/\s+/g, ' ').trim();
   }
 
   /**
-   * Generic preprocessing for unsupported languages
+   * Get detection statistics
    */
-  private preprocessGeneric(text: string): string {
-    return text.replace(/\s+/g, ' ');
+  getDetectionStats(): {
+    supportedLanguages: number;
+    enabledLanguages: number;
+    userPreferences: number;
+  } {
+    const enabledLanguages = Array.from(this.languages.values())
+      .filter(lang => lang.enabled).length;
+
+    return {
+      supportedLanguages: this.languages.size,
+      enabledLanguages,
+      userPreferences: this.userPreferences.size
+    };
   }
-
-  /**
-   * Initialize language models with character frequencies and common words
-   */
-  private initializeLanguageModels(): void {
-    // English model
-    this.languageModels.set('en', {
-      characterFrequencies: new Map([
-        ['e', 0.127], ['t', 0.091], ['a', 0.082], ['o', 0.075], ['i', 0.070],
-        ['n', 0.067], ['s', 0.063], ['h', 0.061], ['r', 0.060], ['d', 0.043]
-      ]),
-      commonWords: new Set([
-        'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i',
-        'it', 'for', 'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at',
-        'call', 'text', 'send', 'get', 'set', 'help', 'please', 'thank'
-      ]),
-      patterns: [
-        /\b(the|a|an)\s+\w+/g,
-        /\w+ing\b/g,
-        /\w+ed\b/g
-      ]
-    });
-
-    // Spanish model
-    this.languageModels.set('es', {
-      characterFrequencies: new Map([
-        ['e', 0.137], ['a', 0.125], ['o', 0.086], ['s', 0.080], ['r', 0.069],
-        ['n', 0.067], ['i', 0.063], ['d', 0.058], ['l', 0.050], ['c', 0.047]
-      ]),
-      commonWords: new Set([
-        'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'es', 'se',
-        'no', 'te', 'lo', 'le', 'da', 'su', 'por', 'son', 'con', 'para',
-        'llamar', 'enviar', 'mensaje', 'ayuda', 'por favor', 'gracias'
-      ]),
-      patterns: [
-        /\b(el|la|los|las)\s+\w+/g,
-        /\w+ción\b/g,
-        /\w+ando\b/g
-      ]
-    });
-
-    // Add more language models as needed
-  }
-}
-
-interface LanguageModel {
-  characterFrequencies: Map<string, number>;
-  commonWords: Set<string>;
-  patterns: RegExp[];
 }

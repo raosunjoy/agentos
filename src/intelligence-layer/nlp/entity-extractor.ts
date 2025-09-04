@@ -1,280 +1,93 @@
 /**
- * Entity Extractor - Extract parameters from user input
- * 
- * Identifies and extracts entities like contacts, dates, locations,
- * and other parameters from natural language input.
+ * Entity Extractor - Extracts structured entities from natural language text
+ * Uses rule-based and pattern matching approaches for entity recognition
  */
 
-import { Entity, IntentParameter } from './types';
+import { Parameter, Entity, EntityType, EntityMetadata } from './types';
+
+export interface ExtractionResult {
+  entities: Entity[];
+  confidence: number;
+}
 
 export class EntityExtractor {
-  private patterns: Map<string, RegExp[]> = new Map();
-  private namedEntityCache: Map<string, Entity[]> = new Map();
+  private entityPatterns: Map<string, RegExp[]> = new Map();
+  private customExtractors: Map<string, (text: string) => Entity[]> = new Map();
 
   constructor() {
-    this.initializePatterns();
+    this.initializeDefaultPatterns();
   }
 
   /**
-   * Extract entities from text based on expected parameters
+   * Extract entities from text based on parameter definitions
    */
-  async extractEntities(text: string, parameters: IntentParameter[]): Promise<Entity[]> {
+  async extractEntities(text: string, parameters: Parameter[]): Promise<Entity[]> {
     const entities: Entity[] = [];
-    const processedText = text.toLowerCase();
+    const normalizedText = text.toLowerCase().trim();
 
     for (const parameter of parameters) {
-      const parameterEntities = await this.extractEntitiesForType(
-        processedText, 
-        parameter.type, 
-        parameter.name
+      const parameterEntities = await this.extractParameterEntities(
+        normalizedText,
+        parameter
       );
       entities.push(...parameterEntities);
     }
 
-    // Remove overlapping entities (keep highest confidence)
-    return this.resolveOverlappingEntities(entities);
+    // Remove overlapping entities (keep the one with higher confidence)
+    return this.resolveEntityConflicts(entities);
   }
 
   /**
-   * Extract entities of a specific type from text
+   * Extract entities for a specific parameter
    */
-  private async extractEntitiesForType(text: string, type: string, parameterName: string): Promise<Entity[]> {
+  private async extractParameterEntities(
+    text: string,
+    parameter: Parameter
+  ): Promise<Entity[]> {
     const entities: Entity[] = [];
 
-    switch (type) {
-      case 'contact':
-        entities.push(...await this.extractContacts(text, parameterName));
-        break;
-      case 'date':
-        entities.push(...this.extractDates(text, parameterName));
-        break;
-      case 'location':
-        entities.push(...this.extractLocations(text, parameterName));
-        break;
-      case 'number':
-        entities.push(...this.extractNumbers(text, parameterName));
-        break;
-      case 'string':
-        entities.push(...this.extractStrings(text, parameterName));
-        break;
-      case 'boolean':
-        entities.push(...this.extractBooleans(text, parameterName));
-        break;
+    // Try custom extractors first
+    if (this.customExtractors.has(parameter.type)) {
+      const customEntities = this.customExtractors.get(parameter.type)!(text);
+      entities.push(...customEntities);
     }
+
+    // Try pattern-based extraction
+    const patternEntities = this.extractWithPatterns(text, parameter);
+    entities.push(...patternEntities);
+
+    // Try rule-based extraction based on parameter type
+    const ruleEntities = this.extractWithRules(text, parameter);
+    entities.push(...ruleEntities);
 
     return entities;
   }
 
   /**
-   * Extract contact names from text
+   * Extract entities using predefined patterns
    */
-  private async extractContacts(text: string, parameterName: string): Promise<Entity[]> {
+  private extractWithPatterns(text: string, parameter: Parameter): Entity[] {
     const entities: Entity[] = [];
-    const contactPatterns = this.patterns.get('contact') || [];
+    const patterns = this.entityPatterns.get(parameter.type) || [];
 
-    // Common contact references
-    const commonContacts = [
-      'mom', 'mother', 'dad', 'father', 'son', 'daughter', 'wife', 'husband',
-      'doctor', 'dentist', 'nurse', 'caregiver', 'neighbor', 'friend',
-      'brother', 'sister', 'grandson', 'granddaughter', 'grandma', 'grandpa'
-    ];
+    for (const pattern of patterns) {
+      const matches = text.match(pattern);
+      if (matches) {
+        for (const match of matches) {
+          const startIndex = text.indexOf(match);
+          const endIndex = startIndex + match.length;
 
-    // Check for common contact references
-    for (const contact of commonContacts) {
-      const regex = new RegExp(`\\b(my\\s+)?${contact}\\b`, 'gi');
-      let match;
-      while ((match = regex.exec(text)) !== null) {
-        entities.push({
-          type: 'contact',
-          value: contact,
-          confidence: 0.9,
-          startIndex: match.index,
-          endIndex: match.index + match[0].length,
-          metadata: { parameterName, contactType: 'relationship' }
-        });
-      }
-    }
-
-    // Check for proper names (capitalized words) in original text
-    const originalText = text; // Keep original case for name detection
-    const namePattern = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g;
-    let match;
-    while ((match = namePattern.exec(originalText)) !== null) {
-      // Skip common words that might be capitalized
-      const commonWords = ['I', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-      if (!commonWords.includes(match[0])) {
-        entities.push({
-          type: 'contact',
-          value: match[0],
-          confidence: 0.7,
-          startIndex: match.index,
-          endIndex: match.index + match[0].length,
-          metadata: { parameterName, contactType: 'name' }
-        });
-      }
-    }
-
-    return entities;
-  }
-
-  /**
-   * Extract dates and times from text
-   */
-  private extractDates(text: string, parameterName: string): Entity[] {
-    const entities: Entity[] = [];
-    const datePatterns = this.patterns.get('date') || [];
-
-    // Time patterns
-    const timePattern = /\b(\d{1,2}):?(\d{2})?\s*(am|pm|a\.m\.|p\.m\.)\b/gi;
-    let match;
-    while ((match = timePattern.exec(text)) !== null) {
-      const hour = parseInt(match[1]);
-      const minute = match[2] ? parseInt(match[2]) : 0;
-      const period = match[3].toLowerCase().replace(/\./g, '');
-      
-      entities.push({
-        type: 'date',
-        value: `${hour}:${minute.toString().padStart(2, '0')} ${period}`,
-        confidence: 0.9,
-        startIndex: match.index,
-        endIndex: match.index + match[0].length,
-        metadata: { parameterName, dateType: 'time' }
-      });
-    }
-
-    // Relative time patterns
-    const relativePatterns = [
-      { pattern: /\b(today|now)\b/gi, value: 'today' },
-      { pattern: /\b(tomorrow)\b/gi, value: 'tomorrow' },
-      { pattern: /\b(yesterday)\b/gi, value: 'yesterday' },
-      { pattern: /\bin\s+(\d+)\s+(minutes?|hours?|days?)\b/gi, value: 'relative' },
-      { pattern: /\b(next|this)\s+(week|month|year)\b/gi, value: 'relative' },
-      { pattern: /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi, value: 'weekday' }
-    ];
-
-    for (const { pattern, value } of relativePatterns) {
-      let match;
-      while ((match = pattern.exec(text)) !== null) {
-        entities.push({
-          type: 'date',
-          value: match[0].toLowerCase(),
-          confidence: 0.8,
-          startIndex: match.index,
-          endIndex: match.index + match[0].length,
-          metadata: { parameterName, dateType: value }
-        });
-      }
-    }
-
-    return entities;
-  }
-
-  /**
-   * Extract location references from text
-   */
-  private extractLocations(text: string, parameterName: string): Entity[] {
-    const entities: Entity[] = [];
-
-    // Common location references
-    const locationPatterns = [
-      { pattern: /\b(home|house)\b/gi, type: 'home' },
-      { pattern: /\b(work|office|workplace)\b/gi, type: 'work' },
-      { pattern: /\b(hospital|clinic|doctor'?s office)\b/gi, type: 'medical' },
-      { pattern: /\b(store|shop|market|mall)\b/gi, type: 'shopping' },
-      { pattern: /\b(here|there|nearby)\b/gi, type: 'relative' }
-    ];
-
-    for (const { pattern, type } of locationPatterns) {
-      let match;
-      while ((match = pattern.exec(text)) !== null) {
-        entities.push({
-          type: 'location',
-          value: match[0],
-          confidence: 0.7,
-          startIndex: match.index,
-          endIndex: match.index + match[0].length,
-          metadata: { parameterName, locationType: type }
-        });
-      }
-    }
-
-    return entities;
-  }
-
-  /**
-   * Extract numbers from text
-   */
-  private extractNumbers(text: string, parameterName: string): Entity[] {
-    const entities: Entity[] = [];
-
-    // Digit patterns
-    const numberPattern = /\b\d+(?:\.\d+)?\b/g;
-    let match;
-    while ((match = numberPattern.exec(text)) !== null) {
-      entities.push({
-        type: 'number',
-        value: match[0],
-        confidence: 0.9,
-        startIndex: match.index,
-        endIndex: match.index + match[0].length,
-        metadata: { parameterName }
-      });
-    }
-
-    // Written numbers
-    const writtenNumbers = {
-      'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-      'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
-      'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13',
-      'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17',
-      'eighteen': '18', 'nineteen': '19', 'twenty': '20', 'thirty': '30',
-      'forty': '40', 'fifty': '50', 'sixty': '60', 'seventy': '70',
-      'eighty': '80', 'ninety': '90', 'hundred': '100'
-    };
-
-    for (const [word, value] of Object.entries(writtenNumbers)) {
-      const regex = new RegExp(`\\b${word}\\b`, 'gi');
-      let match;
-      while ((match = regex.exec(text)) !== null) {
-        entities.push({
-          type: 'number',
-          value: value,
-          confidence: 0.8,
-          startIndex: match.index,
-          endIndex: match.index + match[0].length,
-          metadata: { parameterName, originalText: word }
-        });
-      }
-    }
-
-    return entities;
-  }
-
-  /**
-   * Extract string content (usually message content)
-   */
-  private extractStrings(text: string, parameterName: string): Entity[] {
-    const entities: Entity[] = [];
-
-    // For message content, extract everything after common trigger words
-    if (parameterName === 'message') {
-      const messagePatterns = [
-        /\bsay\s+(.+)/gi,
-        /\btell\s+\w+\s+(.+)/gi,
-        /\bmessage\s+\w+\s+(.+)/gi,
-        /\btext\s+\w+\s+(.+)/gi
-      ];
-
-      for (const pattern of messagePatterns) {
-        let match;
-        while ((match = pattern.exec(text)) !== null) {
           entities.push({
-            type: 'string',
-            value: match[1].trim().toLowerCase(),
+            type: parameter.type as EntityType,
+            value: this.cleanExtractedValue(match, parameter.type),
+            startIndex,
+            endIndex,
             confidence: 0.8,
-            startIndex: match.index + match[0].indexOf(match[1]),
-            endIndex: match.index + match[0].length,
-            metadata: { parameterName }
+            metadata: {
+              parameterName: parameter.name,
+              extractionMethod: 'pattern',
+              pattern: pattern.source
+            }
           });
         }
       }
@@ -284,26 +97,266 @@ export class EntityExtractor {
   }
 
   /**
-   * Extract boolean values from text
+   * Extract entities using rule-based approaches
    */
-  private extractBooleans(text: string, parameterName: string): Entity[] {
+  private extractWithRules(text: string, parameter: Parameter): Entity[] {
     const entities: Entity[] = [];
 
-    const booleanPatterns = [
-      { pattern: /\b(yes|yeah|yep|sure|okay|ok|true)\b/gi, value: 'true' },
-      { pattern: /\b(no|nope|false|never)\b/gi, value: 'false' }
+    switch (parameter.type) {
+      case 'date':
+        entities.push(...this.extractDates(text, parameter));
+        break;
+      case 'time':
+        entities.push(...this.extractTimes(text, parameter));
+        break;
+      case 'number':
+        entities.push(...this.extractNumbers(text, parameter));
+        break;
+      case 'location':
+        entities.push(...this.extractLocations(text, parameter));
+        break;
+      case 'person':
+        entities.push(...this.extractPersons(text, parameter));
+        break;
+      case 'email':
+        entities.push(...this.extractEmails(text, parameter));
+        break;
+      case 'phone':
+        entities.push(...this.extractPhones(text, parameter));
+        break;
+      case 'url':
+        entities.push(...this.extractUrls(text, parameter));
+        break;
+      default:
+        // Try generic extraction for custom types
+        entities.push(...this.extractGeneric(text, parameter));
+        break;
+    }
+
+    return entities;
+  }
+
+  /**
+   * Extract date entities
+   */
+  private extractDates(text: string, parameter: Parameter): Entity[] {
+    const entities: Entity[] = [];
+    const datePatterns = [
+      /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,  // MM/DD/YYYY
+      /\b\d{1,2}-\d{1,2}-\d{2,4}\b/g,    // MM-DD-YYYY
+      /\b\d{4}-\d{1,2}-\d{1,2}\b/g,      // YYYY-MM-DD
+      /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{2,4}\b/gi,
+      /\b\d{1,2}(st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/gi,
+      /\btoday\b|\btomorrow\b|\byesterday\b/gi,
+      /\bnext\s+(week|month|year)\b/gi,
+      /\bin\s+\d+\s+(days?|weeks?|months?|years?)\b/gi
     ];
 
-    for (const { pattern, value } of booleanPatterns) {
-      let match;
-      while ((match = pattern.exec(text)) !== null) {
+    for (const pattern of datePatterns) {
+      const matches = text.match(pattern);
+      if (matches) {
+        for (const match of matches) {
+          const startIndex = text.indexOf(match);
+          const endIndex = startIndex + match.length;
+
+          entities.push({
+            type: 'date',
+            value: this.parseDate(match),
+            startIndex,
+            endIndex,
+            confidence: 0.9,
+            metadata: {
+              parameterName: parameter.name,
+              extractionMethod: 'rule',
+              originalText: match
+            }
+          });
+        }
+      }
+    }
+
+    return entities;
+  }
+
+  /**
+   * Extract time entities
+   */
+  private extractTimes(text: string, parameter: Parameter): Entity[] {
+    const entities: Entity[] = [];
+    const timePatterns = [
+      /\b\d{1,2}:\d{1,2}\s*(am|pm)?\b/gi,
+      /\b\d{1,2}\s*(am|pm)\b/gi,
+      /\bat\s+\d{1,2}(:\d{1,2})?\s*(am|pm)?\b/gi,
+      /\bin\s+\d+\s+(minutes?|hours?)\b/gi
+    ];
+
+    for (const pattern of timePatterns) {
+      const matches = text.match(pattern);
+      if (matches) {
+        for (const match of matches) {
+          const startIndex = text.indexOf(match);
+          const endIndex = startIndex + match.length;
+
+          entities.push({
+            type: 'time',
+            value: this.parseTime(match),
+            startIndex,
+            endIndex,
+            confidence: 0.85,
+            metadata: {
+              parameterName: parameter.name,
+              extractionMethod: 'rule',
+              originalText: match
+            }
+          });
+        }
+      }
+    }
+
+    return entities;
+  }
+
+  /**
+   * Extract number entities
+   */
+  private extractNumbers(text: string, parameter: Parameter): Entity[] {
+    const entities: Entity[] = [];
+    const numberPatterns = [
+      /\b\d+(\.\d+)?\b/g,
+      /\bone|two|three|four|five|six|seven|eight|nine|ten\b/gi,
+      /\ba\s+(dozen|hundred|thousand|million|billion)\b/gi
+    ];
+
+    for (const pattern of numberPatterns) {
+      const matches = text.match(pattern);
+      if (matches) {
+        for (const match of matches) {
+          const startIndex = text.indexOf(match);
+          const endIndex = startIndex + match.length;
+          const numericValue = this.parseNumber(match);
+
+          if (numericValue !== null) {
+            entities.push({
+              type: 'number',
+              value: numericValue,
+              startIndex,
+              endIndex,
+              confidence: 0.95,
+              metadata: {
+                parameterName: parameter.name,
+                extractionMethod: 'rule',
+                originalText: match
+              }
+            });
+          }
+        }
+      }
+    }
+
+    return entities;
+  }
+
+  /**
+   * Extract location entities
+   */
+  private extractLocations(text: string, parameter: Parameter): Entity[] {
+    const entities: Entity[] = [];
+    // Simple location extraction - in a real system, this would use a gazetteer
+    const locationPatterns = [
+      /\b(New York|London|Paris|Tokyo|Berlin|Miami|Boston|Chicago)\b/gi,
+      /\b\d+\s+[A-Za-z]+\s+(Street|Avenue|Road|Boulevard|Drive|Place)\b/gi
+    ];
+
+    for (const pattern of locationPatterns) {
+      const matches = text.match(pattern);
+      if (matches) {
+        for (const match of matches) {
+          const startIndex = text.indexOf(match);
+          const endIndex = startIndex + match.length;
+
+          entities.push({
+            type: 'location',
+            value: match,
+            startIndex,
+            endIndex,
+            confidence: 0.75,
+            metadata: {
+              parameterName: parameter.name,
+              extractionMethod: 'rule',
+              originalText: match
+            }
+          });
+        }
+      }
+    }
+
+    return entities;
+  }
+
+  /**
+   * Extract person name entities
+   */
+  private extractPersons(text: string, parameter: Parameter): Entity[] {
+    const entities: Entity[] = [];
+    // Simple person name extraction - in a real system, this would use NER models
+    const personPatterns = [
+      /\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/g,  // First Last
+      /\bDr\.?\s+[A-Z][a-z]+\b/gi,
+      /\bMr\.?\s+[A-Z][a-z]+\b/gi,
+      /\bMrs\.?\s+[A-Z][a-z]+\b/gi,
+      /\bMs\.?\s+[A-Z][a-z]+\b/gi
+    ];
+
+    for (const pattern of personPatterns) {
+      const matches = text.match(pattern);
+      if (matches) {
+        for (const match of matches) {
+          const startIndex = text.indexOf(match);
+          const endIndex = startIndex + match.length;
+
+          entities.push({
+            type: 'person',
+            value: match,
+            startIndex,
+            endIndex,
+            confidence: 0.7,
+            metadata: {
+              parameterName: parameter.name,
+              extractionMethod: 'rule',
+              originalText: match
+            }
+          });
+        }
+      }
+    }
+
+    return entities;
+  }
+
+  /**
+   * Extract email entities
+   */
+  private extractEmails(text: string, parameter: Parameter): Entity[] {
+    const entities: Entity[] = [];
+    const emailPattern = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
+
+    const matches = text.match(emailPattern);
+    if (matches) {
+      for (const match of matches) {
+        const startIndex = text.indexOf(match);
+        const endIndex = startIndex + match.length;
+
         entities.push({
-          type: 'boolean',
-          value: value,
-          confidence: 0.7,
-          startIndex: match.index,
-          endIndex: match.index + match[0].length,
-          metadata: { parameterName }
+          type: 'email',
+          value: match.toLowerCase(),
+          startIndex,
+          endIndex,
+          confidence: 0.95,
+          metadata: {
+            parameterName: parameter.name,
+            extractionMethod: 'rule',
+            originalText: match
+          }
         });
       }
     }
@@ -312,31 +365,250 @@ export class EntityExtractor {
   }
 
   /**
-   * Resolve overlapping entities by keeping the highest confidence ones
+   * Extract phone entities
    */
-  private resolveOverlappingEntities(entities: Entity[]): Entity[] {
-    // Sort by start index
-    entities.sort((a, b) => a.startIndex - b.startIndex);
+  private extractPhones(text: string, parameter: Parameter): Entity[] {
+    const entities: Entity[] = [];
+    const phonePatterns = [
+      /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g,  // 123-456-7890
+      /\b\(\d{3}\)\s*\d{3}[-.]?\d{4}\b/g,  // (123) 456-7890
+      /\b\d{10,11}\b/g  // 1234567890
+    ];
+
+    for (const pattern of phonePatterns) {
+      const matches = text.match(pattern);
+      if (matches) {
+        for (const match of matches) {
+          const startIndex = text.indexOf(match);
+          const endIndex = startIndex + match.length;
+
+          entities.push({
+            type: 'phone',
+            value: this.formatPhoneNumber(match),
+            startIndex,
+            endIndex,
+            confidence: 0.9,
+            metadata: {
+              parameterName: parameter.name,
+              extractionMethod: 'rule',
+              originalText: match
+            }
+          });
+        }
+      }
+    }
+
+    return entities;
+  }
+
+  /**
+   * Extract URL entities
+   */
+  private extractUrls(text: string, parameter: Parameter): Entity[] {
+    const entities: Entity[] = [];
+    const urlPattern = /\bhttps?:\/\/[^\s<>"{}|\\^`[\]]+\b/gi;
+
+    const matches = text.match(urlPattern);
+    if (matches) {
+      for (const match of matches) {
+        const startIndex = text.indexOf(match);
+        const endIndex = startIndex + match.length;
+
+        entities.push({
+          type: 'url',
+          value: match,
+          startIndex,
+          endIndex,
+          confidence: 0.95,
+          metadata: {
+            parameterName: parameter.name,
+            extractionMethod: 'rule',
+            originalText: match
+          }
+        });
+      }
+    }
+
+    return entities;
+  }
+
+  /**
+   * Extract generic entities
+   */
+  private extractGeneric(text: string, parameter: Parameter): Entity[] {
+    const entities: Entity[] = [];
+
+    // Try to find quoted strings
+    const quotedPattern = /"([^"]+)"/g;
+    const quotedMatches = text.match(quotedPattern);
+    if (quotedMatches) {
+      for (const match of quotedMatches) {
+        const startIndex = text.indexOf(match);
+        const endIndex = startIndex + match.length;
+        const value = match.slice(1, -1); // Remove quotes
+
+        entities.push({
+          type: parameter.type as EntityType,
+          value,
+          startIndex,
+          endIndex,
+          confidence: 0.6,
+          metadata: {
+            parameterName: parameter.name,
+            extractionMethod: 'generic',
+            originalText: match
+          }
+        });
+      }
+    }
+
+    return entities;
+  }
+
+  /**
+   * Initialize default patterns for common entity types
+   */
+  private initializeDefaultPatterns(): void {
+    // Date patterns
+    this.entityPatterns.set('date', [
+      /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,
+      /\b\d{4}-\d{1,2}-\d{1,2}\b/g
+    ]);
+
+    // Time patterns
+    this.entityPatterns.set('time', [
+      /\b\d{1,2}:\d{1,2}\b/g,
+      /\b\d{1,2}\s*(am|pm)\b/gi
+    ]);
+
+    // Number patterns
+    this.entityPatterns.set('number', [
+      /\b\d+(\.\d+)?\b/g
+    ]);
+
+    // Email patterns
+    this.entityPatterns.set('email', [
+      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g
+    ]);
+
+    // URL patterns
+    this.entityPatterns.set('url', [
+      /\bhttps?:\/\/[^\s<>"{}|\\^`[\]]+\b/gi
+    ]);
+  }
+
+  /**
+   * Clean extracted value based on entity type
+   */
+  private cleanExtractedValue(value: string, type: string): any {
+    switch (type) {
+      case 'number':
+        return this.parseNumber(value);
+      case 'date':
+        return this.parseDate(value);
+      case 'time':
+        return this.parseTime(value);
+      case 'phone':
+        return this.formatPhoneNumber(value);
+      case 'email':
+        return value.toLowerCase();
+      default:
+        return value.trim();
+    }
+  }
+
+  /**
+   * Parse date string
+   */
+  private parseDate(dateStr: string): Date | string {
+    // Handle relative dates
+    const lowerDate = dateStr.toLowerCase();
+    const now = new Date();
+
+    if (lowerDate.includes('today')) {
+      return now;
+    }
+    if (lowerDate.includes('tomorrow')) {
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return tomorrow;
+    }
+    if (lowerDate.includes('yesterday')) {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return yesterday;
+    }
+
+    // Try to parse as regular date
+    const parsed = new Date(dateStr);
+    return isNaN(parsed.getTime()) ? dateStr : parsed;
+  }
+
+  /**
+   * Parse time string
+   */
+  private parseTime(timeStr: string): string {
+    // Simple time parsing - in a real system, this would be more sophisticated
+    return timeStr.trim();
+  }
+
+  /**
+   * Parse number from string
+   */
+  private parseNumber(numStr: string): number | null {
+    // Handle word numbers
+    const wordNumbers: Record<string, number> = {
+      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+      'a dozen': 12, 'a hundred': 100, 'a thousand': 1000, 'a million': 1000000
+    };
+
+    const lowerNum = numStr.toLowerCase();
+    if (wordNumbers[lowerNum]) {
+      return wordNumbers[lowerNum];
+    }
+
+    const parsed = parseFloat(numStr);
+    return isNaN(parsed) ? null : parsed;
+  }
+
+  /**
+   * Format phone number
+   */
+  private formatPhoneNumber(phoneStr: string): string {
+    const digits = phoneStr.replace(/\D/g, '');
+    if (digits.length === 10) {
+      return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    }
+    if (digits.length === 11 && digits.startsWith('1')) {
+      return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+    }
+    return phoneStr;
+  }
+
+  /**
+   * Resolve conflicts between overlapping entities
+   */
+  private resolveEntityConflicts(entities: Entity[]): Entity[] {
+    if (entities.length <= 1) {
+      return entities;
+    }
+
+    // Sort by confidence (highest first)
+    entities.sort((a, b) => b.confidence - a.confidence);
 
     const resolved: Entity[] = [];
-    
+    const usedRanges: Array<[number, number]> = [];
+
     for (const entity of entities) {
-      // Check if this entity overlaps with any already resolved entity
-      const hasOverlap = resolved.some(resolvedEntity => 
-        this.entitiesOverlap(entity, resolvedEntity)
+      const [start, end] = [entity.startIndex, entity.endIndex];
+      const overlaps = usedRanges.some(([usedStart, usedEnd]) =>
+        (start < usedEnd && end > usedStart)
       );
 
-      if (!hasOverlap) {
+      if (!overlaps) {
         resolved.push(entity);
-      } else {
-        // Find overlapping entity and keep the one with higher confidence
-        const overlappingIndex = resolved.findIndex(resolvedEntity => 
-          this.entitiesOverlap(entity, resolvedEntity)
-        );
-        
-        if (overlappingIndex !== -1 && entity.confidence > resolved[overlappingIndex].confidence) {
-          resolved[overlappingIndex] = entity;
-        }
+        usedRanges.push([start, end]);
       }
     }
 
@@ -344,33 +616,31 @@ export class EntityExtractor {
   }
 
   /**
-   * Check if two entities overlap in the text
+   * Register a custom extractor for a specific entity type
    */
-  private entitiesOverlap(entity1: Entity, entity2: Entity): boolean {
-    return !(entity1.endIndex <= entity2.startIndex || entity2.endIndex <= entity1.startIndex);
+  registerCustomExtractor(type: string, extractor: (text: string) => Entity[]): void {
+    this.customExtractors.set(type, extractor);
   }
 
   /**
-   * Initialize regex patterns for entity extraction
+   * Register custom patterns for an entity type
    */
-  private initializePatterns(): void {
-    // Contact patterns
-    this.patterns.set('contact', [
-      /\b(call|phone|ring|dial)\s+([a-zA-Z\s]+)/gi,
-      /\b(text|message)\s+([a-zA-Z\s]+)/gi
-    ]);
+  registerPatterns(type: string, patterns: RegExp[]): void {
+    this.entityPatterns.set(type, patterns);
+  }
 
-    // Date patterns
-    this.patterns.set('date', [
-      /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,
-      /\b\d{1,2}-\d{1,2}-\d{2,4}\b/g,
-      /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}\b/gi
-    ]);
-
-    // Location patterns
-    this.patterns.set('location', [
-      /\b\d+\s+[a-zA-Z\s]+\b/g, // Street addresses
-      /\b[A-Z][a-zA-Z\s]+,\s*[A-Z]{2}\b/g // City, State
-    ]);
+  /**
+   * Get extraction statistics
+   */
+  getExtractionStats(): Record<string, any> {
+    return {
+      customExtractors: this.customExtractors.size,
+      patternTypes: this.entityPatterns.size,
+      supportedEntityTypes: Array.from(new Set([
+        ...this.customExtractors.keys(),
+        ...this.entityPatterns.keys(),
+        'date', 'time', 'number', 'location', 'person', 'email', 'phone', 'url'
+      ]))
+    };
   }
 }

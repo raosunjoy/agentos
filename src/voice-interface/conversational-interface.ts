@@ -1,877 +1,606 @@
+/**
+ * Conversational Interface Module
+ * Manages natural language conversations with AgentOS
+ */
+
 import { EventEmitter } from 'events';
-import { VoiceSettings, AccessibilitySettings, ConversationState, ConversationTurn, VoicePrompt, VisualFeedback } from './types';
+import {
+  ConversationState,
+  ConversationTurn,
+  ConversationalSettings,
+  VoicePrompt,
+  VoiceInterfaceError
+} from './types';
 
 export class ConversationalInterface extends EventEmitter {
   private conversationState: ConversationState;
-  private voiceSettings: VoiceSettings;
-  private accessibilitySettings: AccessibilitySettings;
-  private currentPrompt?: VoicePrompt;
-  private conversationContainer?: HTMLElement;
-  private visualFeedbackElement?: HTMLElement;
+  private settings: ConversationalSettings;
+  private container: HTMLElement | null = null;
+  private visualFeedbackElement: HTMLElement | null = null;
+  private conversationHistoryElement: HTMLElement | null = null;
+  private inputIndicatorElement: HTMLElement | null = null;
 
-  constructor() {
+  private isInitialized = false;
+  private isProcessing = false;
+  private currentPrompt: VoicePrompt | null = null;
+  private responseTimeout: NodeJS.Timeout | null = null;
+
+  constructor(settings?: Partial<ConversationalSettings>) {
     super();
+
+    this.settings = {
+      maxHistoryLength: 50,
+      responseTimeout: 30000, // 30 seconds
+      contextWindowSize: 10,
+      personality: 'friendly',
+      ...settings
+    };
+
     this.conversationState = {
-      isListening: false,
-      isProcessing: false,
-      isResponding: false,
+      isActive: false,
+      currentContext: 'general',
       awaitingConfirmation: false,
-      conversationHistory: []
-    };
-
-    this.voiceSettings = {
-      speed: 1.0,
-      volume: 0.8,
-      language: 'en-US',
-      pitch: 1.0
-    };
-
-    this.accessibilitySettings = {
-      largeText: false,
-      highContrast: false,
-      screenReader: false,
-      voiceNavigation: true,
-      reducedMotion: false,
-      fontSize: 'large',
-      contrastLevel: 'normal'
+      conversationHistory: [],
+      sessionId: this.generateSessionId(),
+      userId: 'default-user'
     };
   }
 
   /**
    * Initialize the conversational interface
    */
-  public initialize(container: HTMLElement): void {
-    this.conversationContainer = container;
-    this.setupHomeScreen();
-    this.setupEventListeners();
-    this.applyAccessibilitySettings();
+  async initialize(container?: HTMLElement): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
+    try {
+      console.log('Initializing Conversational Interface...');
+
+      if (container) {
+        this.container = container;
+        this.setupUI(container);
+      }
+
+      this.isInitialized = true;
+      this.emit('initialized');
+      console.log('Conversational Interface initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize Conversational Interface:', error);
+      throw new VoiceInterfaceError(
+        'Failed to initialize conversational interface',
+        'INITIALIZATION_FAILED',
+        'conversational-interface',
+        false
+      );
+    }
   }
 
   /**
-   * Create minimal, conversation-focused home screen
+   * Setup user interface elements
    */
-  private setupHomeScreen(): void {
-    if (!this.conversationContainer) return;
+  private setupUI(container: HTMLElement): void {
+    // Create main conversation container
+    const conversationContainer = document.createElement('div');
+    conversationContainer.className = 'agentos-conversation';
+    conversationContainer.setAttribute('role', 'log');
+    conversationContainer.setAttribute('aria-live', 'polite');
+    conversationContainer.setAttribute('aria-label', 'AgentOS Conversation');
 
-    this.conversationContainer.innerHTML = `
-      <div class="conversation-interface" role="main" aria-label="Voice Assistant Interface">
-        <!-- Main conversation area -->
-        <div class="conversation-area" role="log" aria-live="polite" aria-label="Conversation history">
-          <div class="welcome-message" role="banner">
-            <h1 class="welcome-title">Hello! How can I help you today?</h1>
-            <p class="welcome-subtitle">Speak naturally or tap to type</p>
-          </div>
-          <div class="conversation-history" id="conversation-history"></div>
-        </div>
+    // Create conversation history
+    const historyElement = document.createElement('div');
+    historyElement.className = 'conversation-history';
+    conversationContainer.appendChild(historyElement);
+    this.conversationHistoryElement = historyElement;
 
-        <!-- Visual feedback area -->
-        <div class="visual-feedback" id="visual-feedback" role="status" aria-live="assertive">
-          <div class="listening-indicator" aria-hidden="true">
-            <div class="pulse-animation"></div>
-          </div>
-          <div class="status-text" id="status-text">Ready to listen</div>
-        </div>
+    // Create visual feedback element
+    const feedbackElement = document.createElement('div');
+    feedbackElement.className = 'visual-feedback';
+    feedbackElement.setAttribute('aria-live', 'assertive');
+    conversationContainer.appendChild(feedbackElement);
+    this.visualFeedbackElement = feedbackElement;
 
-        <!-- Voice interaction controls -->
-        <div class="voice-controls" role="toolbar" aria-label="Voice controls">
-          <button 
-            class="voice-button primary" 
-            id="voice-button"
-            aria-label="Start voice input"
-            aria-describedby="voice-button-help"
-          >
-            <span class="voice-icon" aria-hidden="true">🎤</span>
-            <span class="voice-text">Tap to speak</span>
-          </button>
-          <div id="voice-button-help" class="sr-only">
-            Press and hold to speak, or tap once to start continuous listening
-          </div>
-        </div>
+    // Create input indicator
+    const indicatorElement = document.createElement('div');
+    indicatorElement.className = 'input-indicator';
+    indicatorElement.textContent = 'Ready to listen';
+    conversationContainer.appendChild(indicatorElement);
+    this.inputIndicatorElement = indicatorElement;
 
-        <!-- Alternative input methods -->
-        <div class="alternative-inputs" role="group" aria-label="Alternative input methods">
-          <button 
-            class="text-input-button" 
-            id="text-input-button"
-            aria-label="Switch to text input"
-          >
-            <span class="text-icon" aria-hidden="true">⌨️</span>
-            <span class="text-label">Type instead</span>
-          </button>
-          
-          <textarea 
-            class="text-input hidden" 
-            id="text-input"
-            placeholder="Type your message here..."
-            aria-label="Text input for voice alternative"
-            rows="3"
-          ></textarea>
-          
-          <button 
-            class="send-text-button hidden" 
-            id="send-text-button"
-            aria-label="Send text message"
-          >
-            Send
-          </button>
-        </div>
+    // Add to container
+    container.appendChild(conversationContainer);
 
-        <!-- Quick actions for elderly users -->
-        <div class="quick-actions" role="group" aria-label="Quick actions">
-          <button class="quick-action" data-intent="emergency" aria-label="Emergency help">
-            <span class="action-icon" aria-hidden="true">🚨</span>
-            <span class="action-text">Emergency</span>
-          </button>
-          <button class="quick-action" data-intent="call-family" aria-label="Call family">
-            <span class="action-icon" aria-hidden="true">👨‍👩‍👧‍👦</span>
-            <span class="action-text">Call Family</span>
-          </button>
-          <button class="quick-action" data-intent="medication-reminder" aria-label="Medication reminder">
-            <span class="action-icon" aria-hidden="true">💊</span>
-            <span class="action-text">Medications</span>
-          </button>
-        </div>
-
-        <!-- Settings and accessibility -->
-        <div class="interface-settings" role="group" aria-label="Interface settings">
-          <button 
-            class="settings-button" 
-            id="settings-button"
-            aria-label="Open accessibility settings"
-            aria-expanded="false"
-            aria-controls="settings-panel"
-          >
-            <span class="settings-icon" aria-hidden="true">⚙️</span>
-            <span class="settings-text">Settings</span>
-          </button>
-        </div>
-
-        <!-- Hidden settings panel -->
-        <div class="settings-panel hidden" id="settings-panel" role="dialog" aria-labelledby="settings-title">
-          <h2 id="settings-title">Accessibility Settings</h2>
-          <div class="settings-content">
-            <!-- Settings content will be populated by accessibility manager -->
-          </div>
-        </div>
-      </div>
-    `;
-
-    this.visualFeedbackElement = this.conversationContainer.querySelector('#visual-feedback') as HTMLElement;
-    this.setupStyles();
+    // Apply initial styles
+    this.applyStyles();
   }
 
   /**
-   * Setup CSS styles for the interface
+   * Apply CSS styles for the conversation interface
    */
-  private setupStyles(): void {
+  private applyStyles(): void {
     const style = document.createElement('style');
     style.textContent = `
-      .conversation-interface {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
+      .agentos-conversation {
+        position: relative;
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: var(--bg-primary, #ffffff);
-        color: var(--text-primary, #333333);
-        padding: 1rem;
-        box-sizing: border-box;
-      }
-
-      .conversation-area {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        overflow-y: auto;
-        margin-bottom: 2rem;
-      }
-
-      .welcome-message {
-        text-align: center;
-        padding: 2rem 1rem;
-        margin-bottom: 2rem;
-      }
-
-      .welcome-title {
-        font-size: var(--font-size-xl, 2rem);
-        font-weight: 600;
-        margin: 0 0 1rem 0;
-        line-height: 1.3;
-      }
-
-      .welcome-subtitle {
-        font-size: var(--font-size-lg, 1.25rem);
-        color: var(--text-secondary, #666666);
-        margin: 0;
       }
 
       .conversation-history {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
+        max-height: 400px;
+        overflow-y: auto;
+        margin-bottom: 20px;
+        padding: 10px;
       }
 
       .conversation-turn {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        background: var(--bg-secondary, #f5f5f5);
+        margin-bottom: 16px;
+        padding: 12px;
+        border-radius: 8px;
+        animation: fadeIn 0.3s ease-in;
       }
 
-      .user-message {
-        align-self: flex-end;
-        background: var(--accent-primary, #007AFF);
+      .conversation-turn.user {
+        background: #007AFF;
         color: white;
-        max-width: 80%;
+        margin-left: 40px;
       }
 
-      .system-message {
-        align-self: flex-start;
-        background: var(--bg-tertiary, #e5e5e5);
-        max-width: 80%;
+      .conversation-turn.agent {
+        background: #F2F2F7;
+        color: #1C1C1E;
+        margin-right: 40px;
+      }
+
+      .conversation-turn.error {
+        background: #FF3B30;
+        color: white;
+      }
+
+      .conversation-turn.processing {
+        background: #FF9500;
+        color: white;
+        animation: pulse 1.5s infinite;
       }
 
       .visual-feedback {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        min-height: 4rem;
+        text-align: center;
+        padding: 10px;
+        font-weight: 500;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        min-height: 24px;
       }
 
-      .listening-indicator {
-        width: 4rem;
-        height: 4rem;
-        border-radius: 50%;
-        background: var(--accent-primary, #007AFF);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 0.5rem;
-        opacity: 0;
-        transition: opacity 0.3s ease;
+      .input-indicator {
+        text-align: center;
+        color: #8E8E93;
+        font-size: 14px;
+        padding: 8px;
       }
 
-      .listening-indicator.active {
-        opacity: 1;
-      }
-
-      .pulse-animation {
-        width: 2rem;
-        height: 2rem;
-        border-radius: 50%;
-        background: white;
-        animation: pulse 1.5s ease-in-out infinite;
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
       }
 
       @keyframes pulse {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.2); opacity: 0.7; }
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
       }
 
-      .status-text {
-        font-size: var(--font-size-md, 1rem);
-        color: var(--text-secondary, #666666);
-        text-align: center;
+      @media (max-width: 768px) {
+        .agentos-conversation {
+          margin: 10px;
+          padding: 15px;
+        }
+
+        .conversation-turn.user,
+        .conversation-turn.agent {
+          margin-left: 20px;
+          margin-right: 20px;
+        }
       }
 
-      .voice-controls {
-        display: flex;
-        justify-content: center;
-        margin-bottom: 2rem;
-      }
-
-      .voice-button {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 1.5rem 2rem;
-        border: none;
-        border-radius: 1rem;
-        background: var(--accent-primary, #007AFF);
-        color: white;
-        font-size: var(--font-size-lg, 1.25rem);
-        cursor: pointer;
-        transition: all 0.2s ease;
-        min-width: 8rem;
-        min-height: 6rem;
-      }
-
-      .voice-button:hover {
-        background: var(--accent-primary-hover, #0056CC);
-        transform: translateY(-2px);
-      }
-
-      .voice-button:active {
-        transform: translateY(0);
-      }
-
-      .voice-button.listening {
-        background: var(--accent-secondary, #FF3B30);
-        animation: pulse-button 1s ease-in-out infinite;
-      }
-
-      @keyframes pulse-button {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.05); }
-      }
-
-      .voice-icon {
-        font-size: 2rem;
-      }
-
-      .alternative-inputs {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        margin-bottom: 2rem;
-      }
-
-      .text-input-button {
-        align-self: center;
-        padding: 0.75rem 1.5rem;
-        border: 2px solid var(--border-primary, #cccccc);
-        border-radius: 0.5rem;
-        background: transparent;
-        color: var(--text-primary, #333333);
-        font-size: var(--font-size-md, 1rem);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-
-      .text-input {
-        width: 100%;
-        padding: 1rem;
-        border: 2px solid var(--border-primary, #cccccc);
-        border-radius: 0.5rem;
-        font-size: var(--font-size-lg, 1.25rem);
-        resize: vertical;
-        min-height: 3rem;
-      }
-
-      .text-input:focus {
-        outline: none;
-        border-color: var(--accent-primary, #007AFF);
-      }
-
-      .send-text-button {
-        align-self: flex-end;
-        padding: 0.75rem 1.5rem;
-        border: none;
-        border-radius: 0.5rem;
-        background: var(--accent-primary, #007AFF);
-        color: white;
-        font-size: var(--font-size-md, 1rem);
-        cursor: pointer;
-      }
-
-      .quick-actions {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-        gap: 1rem;
-        margin-bottom: 2rem;
-      }
-
-      .quick-action {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 1rem;
-        border: 2px solid var(--border-primary, #cccccc);
-        border-radius: 0.75rem;
-        background: var(--bg-secondary, #f5f5f5);
-        color: var(--text-primary, #333333);
-        font-size: var(--font-size-sm, 0.875rem);
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-
-      .quick-action:hover {
-        background: var(--bg-tertiary, #e5e5e5);
-        transform: translateY(-1px);
-      }
-
-      .action-icon {
-        font-size: 1.5rem;
-      }
-
-      .interface-settings {
-        display: flex;
-        justify-content: center;
-      }
-
-      .settings-button {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.75rem 1rem;
-        border: 1px solid var(--border-primary, #cccccc);
-        border-radius: 0.5rem;
-        background: transparent;
-        color: var(--text-secondary, #666666);
-        font-size: var(--font-size-sm, 0.875rem);
-        cursor: pointer;
-      }
-
-      .settings-panel {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: var(--bg-primary, #ffffff);
-        z-index: 1000;
-        padding: 2rem;
-        overflow-y: auto;
-      }
-
-      .hidden {
-        display: none !important;
-      }
-
-      .sr-only {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-      }
-
-      /* High contrast mode */
-      .high-contrast {
-        --bg-primary: #000000;
-        --bg-secondary: #1a1a1a;
-        --bg-tertiary: #333333;
-        --text-primary: #ffffff;
-        --text-secondary: #cccccc;
-        --border-primary: #ffffff;
-        --accent-primary: #ffff00;
-        --accent-primary-hover: #cccc00;
-      }
-
-      /* Large text mode */
-      .large-text {
-        --font-size-sm: 1.125rem;
-        --font-size-md: 1.5rem;
-        --font-size-lg: 1.875rem;
-        --font-size-xl: 2.5rem;
-      }
-
-      /* Extra large text mode */
-      .extra-large-text {
-        --font-size-sm: 1.375rem;
-        --font-size-md: 1.75rem;
-        --font-size-lg: 2.25rem;
-        --font-size-xl: 3rem;
-      }
-
-      /* Reduced motion */
-      .reduced-motion * {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
+      @media (prefers-reduced-motion: reduce) {
+        .conversation-turn,
+        .conversation-turn.processing {
+          animation: none;
+        }
       }
     `;
+
     document.head.appendChild(style);
   }
 
   /**
-   * Setup event listeners for user interactions
+   * Process user input and generate response
    */
-  private setupEventListeners(): void {
-    if (!this.conversationContainer) return;
+  async processInput(input: string): Promise<string> {
+    if (!this.isInitialized) {
+      throw new VoiceInterfaceError(
+        'Conversational Interface not initialized',
+        'NOT_INITIALIZED',
+        'conversational-interface',
+        false
+      );
+    }
 
-    // Voice button interactions
-    const voiceButton = this.conversationContainer.querySelector('#voice-button') as HTMLButtonElement;
-    if (voiceButton) {
-      voiceButton.addEventListener('click', () => this.handleVoiceButtonClick());
-      voiceButton.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          this.handleVoiceButtonClick();
-        }
+    if (this.isProcessing) {
+      console.warn('Already processing input, ignoring new input');
+      return 'Please wait, I\'m still processing your previous request.';
+    }
+
+    try {
+      this.isProcessing = true;
+      this.emit('inputProcessingStarted', input);
+
+      // Update visual feedback
+      this.updateVisualFeedback({
+        type: 'info',
+        message: 'Processing your request...',
+        animated: true
       });
-    }
 
-    // Text input toggle
-    const textInputButton = this.conversationContainer.querySelector('#text-input-button') as HTMLButtonElement;
-    const textInput = this.conversationContainer.querySelector('#text-input') as HTMLTextAreaElement;
-    const sendTextButton = this.conversationContainer.querySelector('#send-text-button') as HTMLButtonElement;
+      // Add user input to conversation
+      const userTurn: ConversationTurn = {
+        id: Date.now().toString(),
+        timestamp: new Date(),
+        userInput: input,
+        systemResponse: '',
+        intent: null,
+        confidence: null,
+        success: false
+      };
 
-    if (textInputButton && textInput && sendTextButton) {
-      textInputButton.addEventListener('click', () => this.toggleTextInput());
-      sendTextButton.addEventListener('click', () => this.handleTextSubmit());
-      textInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          this.handleTextSubmit();
-        }
+      this.addConversationTurn(userTurn);
+
+      // Process input through NLP pipeline (would integrate with intelligence layer)
+      const response = await this.generateResponse(input);
+
+      // Update user turn with response
+      userTurn.systemResponse = response;
+      userTurn.success = true;
+
+      // Add response to conversation
+      this.addConversationTurn(userTurn);
+
+      // Update visual feedback
+      this.updateVisualFeedback({
+        type: 'success',
+        message: 'Response ready',
+        animated: false
       });
-    }
 
-    // Quick actions
-    const quickActions = this.conversationContainer.querySelectorAll('.quick-action');
-    quickActions.forEach(action => {
-      action.addEventListener('click', (e) => {
-        const intent = (e.currentTarget as HTMLElement).dataset.intent;
-        if (intent) {
-          this.handleQuickAction(intent);
-        }
+      this.emit('inputProcessed', { input, response });
+      return response;
+
+    } catch (error) {
+      console.error('Failed to process input:', error);
+
+      // Add error turn to conversation
+      const errorTurn: ConversationTurn = {
+        id: Date.now().toString(),
+        timestamp: new Date(),
+        userInput: input,
+        systemResponse: 'Sorry, I encountered an error processing your request.',
+        intent: null,
+        confidence: null,
+        success: false
+      };
+
+      this.addConversationTurn(errorTurn);
+
+      // Update visual feedback
+      this.updateVisualFeedback({
+        type: 'error',
+        message: 'Error occurred',
+        animated: false
       });
-    });
 
-    // Settings button
-    const settingsButton = this.conversationContainer.querySelector('#settings-button') as HTMLButtonElement;
-    if (settingsButton) {
-      settingsButton.addEventListener('click', () => this.toggleSettings());
-    }
-
-    // Keyboard navigation
-    document.addEventListener('keydown', (e) => this.handleKeyboardNavigation(e));
-  }
-
-  /**
-   * Handle voice button click/activation
-   */
-  private handleVoiceButtonClick(): void {
-    if (this.conversationState.isListening) {
-      this.stopListening();
-    } else {
-      this.startListening();
+      this.emit('inputProcessingError', error);
+      return 'Sorry, I encountered an error processing your request. Please try again.';
+    } finally {
+      this.isProcessing = false;
     }
   }
 
   /**
-   * Start voice listening
+   * Generate response based on user input
    */
-  public startListening(): void {
-    this.conversationState.isListening = true;
-    this.updateVisualFeedback({
-      type: 'listening',
-      message: 'Listening... Speak now',
-      animated: true
-    });
+  private async generateResponse(input: string): Promise<string> {
+    // This would integrate with the intelligence layer
+    // For now, provide simple responses based on keywords
 
-    const voiceButton = this.conversationContainer?.querySelector('#voice-button') as HTMLButtonElement;
-    if (voiceButton) {
-      voiceButton.classList.add('listening');
-      voiceButton.querySelector('.voice-text')!.textContent = 'Listening...';
-      voiceButton.setAttribute('aria-label', 'Stop listening');
+    const lowerInput = input.toLowerCase();
+
+    // Simulate processing delay
+    await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
+
+    // Basic keyword matching for demonstration
+    if (lowerInput.includes('hello') || lowerInput.includes('hi')) {
+      return this.getPersonalityResponse([
+        "Hello! How can I help you today?",
+        "Hi there! What can I do for you?",
+        "Greetings! How may I assist you?"
+      ]);
     }
 
-    this.emit('startListening');
-  }
-
-  /**
-   * Stop voice listening
-   */
-  public stopListening(): void {
-    this.conversationState.isListening = false;
-    this.updateVisualFeedback({
-      type: 'processing',
-      message: 'Processing your request...',
-      animated: true
-    });
-
-    const voiceButton = this.conversationContainer?.querySelector('#voice-button') as HTMLButtonElement;
-    if (voiceButton) {
-      voiceButton.classList.remove('listening');
-      voiceButton.querySelector('.voice-text')!.textContent = 'Tap to speak';
-      voiceButton.setAttribute('aria-label', 'Start voice input');
+    if (lowerInput.includes('weather')) {
+      return "I'd be happy to help you with weather information. What location are you interested in?";
     }
 
-    this.emit('stopListening');
-  }
-
-  /**
-   * Toggle text input visibility
-   */
-  private toggleTextInput(): void {
-    const textInput = this.conversationContainer?.querySelector('#text-input') as HTMLTextAreaElement;
-    const sendButton = this.conversationContainer?.querySelector('#send-text-button') as HTMLButtonElement;
-    const toggleButton = this.conversationContainer?.querySelector('#text-input-button') as HTMLButtonElement;
-
-    if (textInput && sendButton && toggleButton) {
-      const isHidden = textInput.classList.contains('hidden');
-      
-      if (isHidden) {
-        textInput.classList.remove('hidden');
-        sendButton.classList.remove('hidden');
-        toggleButton.textContent = 'Use voice instead';
-        textInput.focus();
-      } else {
-        textInput.classList.add('hidden');
-        sendButton.classList.add('hidden');
-        toggleButton.innerHTML = `
-          <span class="text-icon" aria-hidden="true">⌨️</span>
-          <span class="text-label">Type instead</span>
-        `;
-      }
+    if (lowerInput.includes('time') || lowerInput.includes('what time')) {
+      const now = new Date();
+      return `The current time is ${now.toLocaleTimeString()}.`;
     }
-  }
 
-  /**
-   * Handle text input submission
-   */
-  private handleTextSubmit(): void {
-    const textInput = this.conversationContainer?.querySelector('#text-input') as HTMLTextAreaElement;
-    if (textInput && textInput.value.trim()) {
-      const message = textInput.value.trim();
-      textInput.value = '';
-      this.processUserInput(message, 'text');
+    if (lowerInput.includes('help')) {
+      return "I can help you with various tasks like checking the weather, setting reminders, answering questions, and more. What would you like to know?";
     }
+
+    if (lowerInput.includes('thank')) {
+      return this.getPersonalityResponse([
+        "You're welcome! Is there anything else I can help you with?",
+        "Happy to help! Let me know if you need anything else.",
+        "My pleasure! What else can I do for you?"
+      ]);
+    }
+
+    // Default response
+    return this.getPersonalityResponse([
+      "I'm not sure I understand that request. Could you please rephrase it?",
+      "I didn't quite catch that. Could you say that again?",
+      "I'm sorry, I don't understand. Can you try asking differently?"
+    ]);
   }
 
   /**
-   * Handle quick action selection
+   * Get personality-appropriate response
    */
-  private handleQuickAction(intent: string): void {
-    this.emit('quickAction', { intent });
-    this.addConversationTurn(`Quick action: ${intent}`, 'Processing your request...', intent, 1.0);
+  private getPersonalityResponse(responses: string[]): string {
+    const randomIndex = Math.floor(Math.random() * responses.length);
+    return responses[randomIndex];
   }
 
   /**
-   * Process user input (voice or text)
+   * Add conversation turn to history and UI
    */
-  public processUserInput(input: string, method: 'voice' | 'text'): void {
-    this.conversationState.isProcessing = true;
-    this.updateVisualFeedback({
-      type: 'processing',
-      message: 'Understanding your request...',
-      animated: true
-    });
-
-    this.emit('userInput', { input, method });
-  }
-
-  /**
-   * Add a conversation turn to the history
-   */
-  public addConversationTurn(userInput: string, systemResponse: string, intent?: string, confidence?: number): void {
-    const turn: ConversationTurn = {
-      id: Date.now().toString(),
-      timestamp: new Date(),
-      userInput,
-      systemResponse,
-      intent,
-      confidence,
-      success: true
-    };
-
+  private addConversationTurn(turn: ConversationTurn): void {
+    // Add to internal history
     this.conversationState.conversationHistory.push(turn);
-    this.renderConversationTurn(turn);
+
+    // Trim history if needed
+    if (this.conversationState.conversationHistory.length > this.settings.maxHistoryLength) {
+      this.conversationState.conversationHistory.shift();
+    }
+
+    // Render in UI if available
+    if (this.conversationHistoryElement) {
+      this.renderConversationTurn(turn);
+    }
+
+    this.emit('conversationTurnAdded', turn);
   }
 
   /**
-   * Render a conversation turn in the UI
+   * Render conversation turn in UI
    */
   private renderConversationTurn(turn: ConversationTurn): void {
-    const historyContainer = this.conversationContainer?.querySelector('#conversation-history');
-    if (!historyContainer) return;
+    if (!this.conversationHistoryElement) return;
 
     const turnElement = document.createElement('div');
-    turnElement.className = 'conversation-turn';
-    turnElement.innerHTML = `
-      <div class="user-message" role="log">
-        <strong>You:</strong> ${this.escapeHtml(turn.userInput)}
-      </div>
-      <div class="system-message" role="log">
-        <strong>Assistant:</strong> ${this.escapeHtml(turn.systemResponse)}
-        ${turn.confidence ? `<span class="confidence">(${Math.round(turn.confidence * 100)}% confident)</span>` : ''}
-      </div>
-    `;
+    turnElement.className = `conversation-turn ${turn.success ? 'agent' : 'error'}`;
+    turnElement.setAttribute('role', 'article');
 
-    historyContainer.appendChild(turnElement);
-    turnElement.scrollIntoView({ behavior: 'smooth' });
+    const timestamp = turn.timestamp.toLocaleTimeString();
+    const userInput = document.createElement('div');
+    userInput.className = 'user-input';
+    userInput.textContent = `You: ${turn.userInput}`;
+
+    const response = document.createElement('div');
+    response.className = 'agent-response';
+    response.textContent = `AgentOS: ${turn.systemResponse}`;
+
+    const timeElement = document.createElement('div');
+    timeElement.className = 'timestamp';
+    timeElement.textContent = timestamp;
+
+    turnElement.appendChild(userInput);
+    turnElement.appendChild(response);
+    turnElement.appendChild(timeElement);
+
+    this.conversationHistoryElement.appendChild(turnElement);
+    this.conversationHistoryElement.scrollTop = this.conversationHistoryElement.scrollHeight;
   }
 
   /**
-   * Update visual feedback display
+   * Update visual feedback
    */
-  public updateVisualFeedback(feedback: VisualFeedback): void {
+  private updateVisualFeedback(feedback: {
+    type: 'success' | 'error' | 'warning' | 'info';
+    message: string;
+    animated?: boolean;
+  }): void {
     if (!this.visualFeedbackElement) return;
 
-    const indicator = this.visualFeedbackElement.querySelector('.listening-indicator') as HTMLElement;
-    const statusText = this.visualFeedbackElement.querySelector('#status-text') as HTMLElement;
+    // Clear existing classes
+    this.visualFeedbackElement.className = 'visual-feedback';
 
-    // Update indicator visibility and animation
+    // Add type class
+    this.visualFeedbackElement.classList.add(feedback.type);
+
+    // Add animation class if needed
     if (feedback.animated) {
-      indicator.classList.add('active');
-    } else {
-      indicator.classList.remove('active');
+      this.visualFeedbackElement.classList.add('animated');
     }
 
-    // Update status text
-    if (statusText && feedback.message) {
-      statusText.textContent = feedback.message;
-    }
-
-    // Update state
-    this.conversationState.isListening = feedback.type === 'listening';
-    this.conversationState.isProcessing = feedback.type === 'processing';
-    this.conversationState.isResponding = feedback.type === 'speaking';
+    // Update content
+    this.visualFeedbackElement.textContent = feedback.message;
   }
 
   /**
-   * Show voice prompt for confirmation or clarification
+   * Update input indicator
    */
-  public showVoicePrompt(prompt: VoicePrompt): void {
+  private updateInputIndicator(message: string): void {
+    if (this.inputIndicatorElement) {
+      this.inputIndicatorElement.textContent = message;
+    }
+  }
+
+  /**
+   * Start listening for input
+   */
+  startListening(): void {
+    this.conversationState.isActive = true;
+    this.updateInputIndicator('Listening...');
+    this.updateVisualFeedback({
+      type: 'info',
+      message: 'Listening for your voice',
+      animated: true
+    });
+    this.emit('listeningStarted');
+  }
+
+  /**
+   * Stop listening for input
+   */
+  stopListening(): void {
+    this.conversationState.isActive = false;
+    this.updateInputIndicator('Ready to listen');
+    this.updateVisualFeedback({
+      type: 'success',
+      message: 'Ready to listen',
+      animated: false
+    });
+    this.emit('listeningStopped');
+  }
+
+  /**
+   * Show voice prompt to user
+   */
+  showPrompt(prompt: VoicePrompt): void {
     this.currentPrompt = prompt;
-    this.conversationState.awaitingConfirmation = true;
 
-    // Add prompt to conversation
-    this.addConversationTurn('', prompt.text, prompt.id);
+    this.updateVisualFeedback({
+      type: 'info',
+      message: prompt.message,
+      animated: true
+    });
 
-    // Emit prompt event for voice synthesis
-    this.emit('voicePrompt', prompt);
-  }
-
-  /**
-   * Handle keyboard navigation for accessibility
-   */
-  private handleKeyboardNavigation(event: KeyboardEvent): void {
-    // Space bar to activate voice input
-    if (event.code === 'Space' && event.target === document.body) {
-      event.preventDefault();
-      this.handleVoiceButtonClick();
-    }
-
-    // Escape to cancel current operation
-    if (event.key === 'Escape') {
-      if (this.conversationState.isListening) {
-        this.stopListening();
-      }
-      if (this.conversationState.awaitingConfirmation) {
+    // Set timeout if specified
+    if (prompt.timeout) {
+      this.responseTimeout = setTimeout(() => {
         this.cancelPrompt();
-      }
+        this.emit('promptTimeout', prompt);
+      }, prompt.timeout);
     }
+
+    this.emit('promptShown', prompt);
   }
 
   /**
    * Cancel current voice prompt
    */
   private cancelPrompt(): void {
-    this.currentPrompt = undefined;
-    this.conversationState.awaitingConfirmation = false;
+    if (this.currentPrompt) {
+      this.emit('promptCancelled', this.currentPrompt);
+      this.currentPrompt = null;
+    }
+
+    if (this.responseTimeout) {
+      clearTimeout(this.responseTimeout);
+      this.responseTimeout = null;
+    }
+
     this.updateVisualFeedback({
-      type: 'success',
+      type: 'info',
       message: 'Ready to listen',
       animated: false
     });
   }
 
   /**
-   * Toggle settings panel
+   * Get conversation history
    */
-  private toggleSettings(): void {
-    const settingsPanel = this.conversationContainer?.querySelector('#settings-panel') as HTMLElement;
-    const settingsButton = this.conversationContainer?.querySelector('#settings-button') as HTMLButtonElement;
-    
-    if (settingsPanel && settingsButton) {
-      const isHidden = settingsPanel.classList.contains('hidden');
-      
-      if (isHidden) {
-        settingsPanel.classList.remove('hidden');
-        settingsButton.setAttribute('aria-expanded', 'true');
-        this.emit('settingsOpened');
-      } else {
-        settingsPanel.classList.add('hidden');
-        settingsButton.setAttribute('aria-expanded', 'false');
+  getConversationHistory(): ConversationTurn[] {
+    return [...this.conversationState.conversationHistory];
+  }
+
+  /**
+   * Clear conversation history
+   */
+  clearConversationHistory(): void {
+    this.conversationState.conversationHistory = [];
+    this.emit('conversationCleared');
+
+    if (this.conversationHistoryElement) {
+      this.conversationHistoryElement.innerHTML = '';
+    }
+  }
+
+  /**
+   * Update conversation settings
+   */
+  updateSettings(newSettings: Partial<ConversationalSettings>): void {
+    this.settings = { ...this.settings, ...newSettings };
+    this.emit('settingsUpdated', this.settings);
+  }
+
+  /**
+   * Get current settings
+   */
+  getSettings(): ConversationalSettings {
+    return { ...this.settings };
+  }
+
+  /**
+   * Get current status
+   */
+  getStatus(): any {
+    return {
+      initialized: this.isInitialized,
+      active: this.conversationState.isActive,
+      processing: this.isProcessing,
+      historyLength: this.conversationState.conversationHistory.length,
+      currentContext: this.conversationState.currentContext,
+      awaitingConfirmation: this.conversationState.awaitingConfirmation,
+      hasPrompt: this.currentPrompt !== null
+    };
+  }
+
+  /**
+   * Generate unique session ID
+   */
+  private generateSessionId(): string {
+    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Cleanup resources
+   */
+  async destroy(): Promise<void> {
+    try {
+      this.cancelPrompt();
+
+      if (this.responseTimeout) {
+        clearTimeout(this.responseTimeout);
+        this.responseTimeout = null;
       }
+
+      this.isInitialized = false;
+      this.isProcessing = false;
+      this.conversationState.isActive = false;
+
+      console.log('Conversational Interface destroyed');
+    } catch (error) {
+      console.error('Failed to destroy Conversational Interface:', error);
+      throw error;
     }
-  }
-
-  /**
-   * Apply accessibility settings to the interface
-   */
-  public applyAccessibilitySettings(): void {
-    if (!this.conversationContainer) return;
-
-    const container = this.conversationContainer;
-
-    // Remove existing accessibility classes
-    container.classList.remove('high-contrast', 'large-text', 'extra-large-text', 'reduced-motion');
-
-    // Apply current settings
-    if (this.accessibilitySettings.highContrast) {
-      container.classList.add('high-contrast');
-    }
-
-    if (this.accessibilitySettings.fontSize === 'large') {
-      container.classList.add('large-text');
-    } else if (this.accessibilitySettings.fontSize === 'extra-large') {
-      container.classList.add('extra-large-text');
-    }
-
-    if (this.accessibilitySettings.reducedMotion) {
-      container.classList.add('reduced-motion');
-    }
-  }
-
-  /**
-   * Update accessibility settings
-   */
-  public updateAccessibilitySettings(settings: Partial<AccessibilitySettings>): void {
-    this.accessibilitySettings = { ...this.accessibilitySettings, ...settings };
-    this.applyAccessibilitySettings();
-    this.emit('accessibilitySettingsChanged', this.accessibilitySettings);
-  }
-
-  /**
-   * Update voice settings
-   */
-  public updateVoiceSettings(settings: Partial<VoiceSettings>): void {
-    this.voiceSettings = { ...this.voiceSettings, ...settings };
-    this.emit('voiceSettingsChanged', this.voiceSettings);
-  }
-
-  /**
-   * Get current conversation state
-   */
-  public getConversationState(): ConversationState {
-    return { ...this.conversationState };
-  }
-
-  /**
-   * Get current accessibility settings
-   */
-  public getAccessibilitySettings(): AccessibilitySettings {
-    return { ...this.accessibilitySettings };
-  }
-
-  /**
-   * Get current voice settings
-   */
-  public getVoiceSettings(): VoiceSettings {
-    return { ...this.voiceSettings };
-  }
-
-  /**
-   * Escape HTML to prevent XSS
-   */
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  /**
-   * Cleanup and destroy the interface
-   */
-  public destroy(): void {
-    if (this.conversationContainer) {
-      this.conversationContainer.innerHTML = '';
-    }
-    this.removeAllListeners();
   }
 }

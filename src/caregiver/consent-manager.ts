@@ -5,14 +5,12 @@
 
 import { EventEmitter } from 'events';
 import {
-  CaregiverProfile,
   ConsentRequest,
   CaregiverPermission,
   ConsentStatus,
   PermissionType,
   PermissionScope,
   CaregiverRole,
-  VerificationStatus,
   ConsentConfiguration,
   AccessAuditLog,
   AuditAction
@@ -50,16 +48,16 @@ export class ConsentManager extends EventEmitter {
       return this.autoApproveEmergencyConsent(caregiverId, requestedPermissions, requestedRole);
     }
 
-    const request: ConsentRequest = {
+    const request: any = {
       id: this.generateRequestId(),
       caregiverId,
       requestedPermissions: this.validatePermissions(requestedPermissions),
       requestedRole,
-      message,
       expiresAt: expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days default
       createdAt: new Date(),
       status: ConsentStatus.PENDING
     };
+    if (message !== undefined) request.message = message;
 
     this.consentRequests.set(request.id, request);
     

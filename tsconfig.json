@@ -80,11 +80,7 @@
     "suppressImplicitAnyIndexErrors": false
   },
   "include": [
-    "src/**/*",
-    "tests/**/*",
-    "scripts/**/*",
-    "*.config.js",
-    "*.config.ts"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",

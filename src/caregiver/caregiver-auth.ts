@@ -163,45 +163,51 @@ export class CaregiverAuthenticator extends EventEmitter {
         .find(c => c.email === credentials.email);
 
       if (!caregiver) {
-        await this.auditLogger.log({
+        const auditData: any = {
           caregiverId: 'unknown',
           action: AuditAction.LOGIN,
           resource: 'authentication_failure',
           timestamp: new Date(),
           success: false,
-          details: { reason: 'caregiver_not_found', email: credentials.email },
-          ipAddress,
-          userAgent
-        });
+          details: { reason: 'caregiver_not_found', email: credentials.email }
+        };
+        if (ipAddress !== undefined) auditData.ipAddress = ipAddress;
+        if (userAgent !== undefined) auditData.userAgent = userAgent;
+
+        await this.auditLogger.log(auditData);
         return { success: false, error: 'Invalid credentials' };
       }
 
       if (caregiver.verificationStatus !== VerificationStatus.VERIFIED) {
-        await this.auditLogger.log({
+        const auditData: any = {
           caregiverId: caregiver.id,
           action: AuditAction.LOGIN,
           resource: 'authentication_failure',
           timestamp: new Date(),
           success: false,
-          details: { reason: 'not_verified' },
-          ipAddress,
-          userAgent
-        });
+          details: { reason: 'not_verified' }
+        };
+        if (ipAddress !== undefined) auditData.ipAddress = ipAddress;
+        if (userAgent !== undefined) auditData.userAgent = userAgent;
+
+        await this.auditLogger.log(auditData);
         return { success: false, error: 'Account not verified' };
       }
 
       // Verify password (would use proper password hashing in real implementation)
       if (!this.verifyPassword(credentials.password || '', caregiver.id)) {
-        await this.auditLogger.log({
+        const auditData: any = {
           caregiverId: caregiver.id,
           action: AuditAction.LOGIN,
           resource: 'authentication_failure',
           timestamp: new Date(),
           success: false,
-          details: { reason: 'invalid_password' },
-          ipAddress,
-          userAgent
-        });
+          details: { reason: 'invalid_password' }
+        };
+        if (ipAddress !== undefined) auditData.ipAddress = ipAddress;
+        if (userAgent !== undefined) auditData.userAgent = userAgent;
+
+        await this.auditLogger.log(auditData);
         return { success: false, error: 'Invalid credentials' };
       }
 
@@ -211,16 +217,18 @@ export class CaregiverAuthenticator extends EventEmitter {
       }
 
       if (credentials.mfaCode && !this.verifyMFA(caregiver.id, credentials.mfaCode)) {
-        await this.auditLogger.log({
+        const auditData: any = {
           caregiverId: caregiver.id,
           action: AuditAction.LOGIN,
           resource: 'authentication_failure',
           timestamp: new Date(),
           success: false,
-          details: { reason: 'invalid_mfa' },
-          ipAddress,
-          userAgent
-        });
+          details: { reason: 'invalid_mfa' }
+        };
+        if (ipAddress !== undefined) auditData.ipAddress = ipAddress;
+        if (userAgent !== undefined) auditData.userAgent = userAgent;
+
+        await this.auditLogger.log(auditData);
         return { success: false, error: 'Invalid MFA code' };
       }
 
@@ -231,16 +239,18 @@ export class CaregiverAuthenticator extends EventEmitter {
       caregiver.lastActiveAt = new Date();
       this.caregivers.set(caregiver.id, caregiver);
 
-      await this.auditLogger.log({
+      const auditData: any = {
         caregiverId: caregiver.id,
         action: AuditAction.LOGIN,
         resource: 'authentication_success',
         timestamp: new Date(),
         success: true,
-        details: { sessionId: session.id },
-        ipAddress,
-        userAgent
-      });
+        details: { sessionId: session.id }
+      };
+      if (ipAddress !== undefined) auditData.ipAddress = ipAddress;
+      if (userAgent !== undefined) auditData.userAgent = userAgent;
+
+      await this.auditLogger.log(auditData);
 
       this.emit('caregiverAuthenticated', { caregiver, session });
 
@@ -252,16 +262,18 @@ export class CaregiverAuthenticator extends EventEmitter {
       };
 
     } catch (error) {
-      await this.auditLogger.log({
+      const auditData: any = {
         caregiverId: 'unknown',
         action: AuditAction.LOGIN,
         resource: 'authentication_error',
         timestamp: new Date(),
         success: false,
-        details: { error: error instanceof Error ? error.message : 'Unknown error' },
-        ipAddress,
-        userAgent
-      });
+        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+      };
+      if (ipAddress !== undefined) auditData.ipAddress = ipAddress;
+      if (userAgent !== undefined) auditData.userAgent = userAgent;
+
+      await this.auditLogger.log(auditData);
       return { success: false, error: 'Authentication failed' };
     }
   }
@@ -421,17 +433,17 @@ export class CaregiverAuthenticator extends EventEmitter {
     ipAddress?: string,
     userAgent?: string
   ): Promise<CaregiverSession> {
-    const session: CaregiverSession = {
+    const session: any = {
       id: this.generateSessionId(),
       caregiverId,
       token: this.generateSessionToken(),
       createdAt: new Date(),
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
       lastActivityAt: new Date(),
-      ipAddress,
-      userAgent,
       isActive: true
     };
+    if (ipAddress !== undefined) session.ipAddress = ipAddress;
+    if (userAgent !== undefined) session.userAgent = userAgent;
 
     this.sessions.set(session.id, session);
     return session;
@@ -453,7 +465,7 @@ export class CaregiverAuthenticator extends EventEmitter {
     console.log(`Verification code for ${caregiver.email}: ${code.code}`);
   }
 
-  private verifyPassword(password: string, caregiverId: string): boolean {
+  private verifyPassword(password: string, _caregiverId: string): boolean {
     // Would use proper password hashing (bcrypt, etc.)
     return password.length >= 8;
   }
@@ -462,7 +474,7 @@ export class CaregiverAuthenticator extends EventEmitter {
     return role === CaregiverRole.FULL_ACCESS || role === CaregiverRole.REMOTE_ASSISTANT;
   }
 
-  private verifyMFA(caregiverId: string, code: string): boolean {
+  private verifyMFA(_caregiverId: string, code: string): boolean {
     // Would integrate with TOTP/SMS MFA service
     return code.length === 6;
   }

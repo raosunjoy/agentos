@@ -5,9 +5,15 @@
 
 import {
   AccessAuditLog,
-  AuditAction,
-  CaregiverProfile
+  AuditAction
 } from './types';
+
+interface Session {
+  startTime: Date;
+  endTime: Date;
+  duration: number;
+  actions: AccessAuditLog[];
+}
 
 export interface AuditLogStorage {
   store(log: AccessAuditLog): Promise<void>;
@@ -85,12 +91,11 @@ export class AccessAuditLogger {
     endDate?: Date,
     limit: number = 100
   ): Promise<AccessAuditLog[]> {
-    return this.storage.query({
-      caregiverId,
-      startDate,
-      endDate,
-      limit
-    });
+    const query: any = { caregiverId, limit };
+    if (startDate !== undefined) query.startDate = startDate;
+    if (endDate !== undefined) query.endDate = endDate;
+
+    return this.storage.query(query);
   }
 
   /**
@@ -102,12 +107,11 @@ export class AccessAuditLogger {
     endDate?: Date,
     limit: number = 100
   ): Promise<AccessAuditLog[]> {
-    return this.storage.query({
-      action,
-      startDate,
-      endDate,
-      limit
-    });
+    const query: any = { action, limit };
+    if (startDate !== undefined) query.startDate = startDate;
+    if (endDate !== undefined) query.endDate = endDate;
+
+    return this.storage.query(query);
   }
 
   /**
@@ -119,13 +123,12 @@ export class AccessAuditLogger {
     endDate?: Date,
     limit: number = 50
   ): Promise<AccessAuditLog[]> {
-    return this.storage.query({
-      caregiverId,
-      success: false,
-      startDate,
-      endDate,
-      limit
-    });
+    const query: any = { success: false, limit };
+    if (caregiverId !== undefined) query.caregiverId = caregiverId;
+    if (startDate !== undefined) query.startDate = startDate;
+    if (endDate !== undefined) query.endDate = endDate;
+
+    return this.storage.query(query);
   }
 
   /**
@@ -136,11 +139,8 @@ export class AccessAuditLogger {
     endDate: Date,
     caregiverId?: string
   ): Promise<AuditSummary> {
-    const filters: AuditLogFilters = {
-      startDate,
-      endDate,
-      caregiverId
-    };
+    const filters: any = { startDate, endDate };
+    if (caregiverId !== undefined) filters.caregiverId = caregiverId;
 
     const logs = await this.storage.query(filters);
     const totalActions = logs.length;
@@ -322,7 +322,7 @@ export class AccessAuditLogger {
       if (!caregiverLogs[log.caregiverId]) {
         caregiverLogs[log.caregiverId] = [];
       }
-      caregiverLogs[log.caregiverId].push(log);
+      caregiverLogs[log.caregiverId]!.push(log);
     });
 
     // Analyze each caregiver's patterns
@@ -395,8 +395,8 @@ export class AccessAuditLogger {
           endTime: log.timestamp,
           duration: 0,
           actions: [log]
-        };
-      } else if (currentSession) {
+        } as Session;
+              } else if (currentSession && currentSession.endTime && currentSession.startTime) {
         const timeSinceLastAction = log.timestamp.getTime() - currentSession.endTime.getTime();
         
         if (timeSinceLastAction > sessionTimeout) {
@@ -559,13 +559,6 @@ interface SuspiciousPattern {
   type: string;
   severity: 'low' | 'medium' | 'high';
   details: string;
-}
-
-interface Session {
-  startTime: Date;
-  endTime: Date;
-  duration: number;
-  actions: AccessAuditLog[];
 }
 
 interface AuditGap {

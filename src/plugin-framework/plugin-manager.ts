@@ -13,16 +13,20 @@ import {
   PluginMetadata,
   PluginContext,
   PluginRegistryEntry,
-  PluginEvent,
   PluginEventData,
   IntentDefinition,
   IntentResult,
   DataAccessInterface,
   SystemAccessInterface,
-  PluginLogger,
-  ResourceLimits
+  PluginLogger
 } from './types';
-import { PluginFrameworkConfig } from './index';
+
+interface PluginFrameworkConfig {
+  registryPath: string;
+  pluginPaths: string[];
+  sandboxEnabled?: boolean;
+  performanceMonitoring?: boolean;
+}
 
 export class PluginManager extends EventEmitter {
   private loader: PluginLoader;
@@ -30,13 +34,11 @@ export class PluginManager extends EventEmitter {
   private validator: PluginValidator;
   private sandboxManager: PluginSandboxManager;
   private intentHandlers = new Map<string, { pluginId: string; handler: AgentOSPlugin }>();
-  private config: PluginFrameworkConfig;
   private initialized = false;
 
   constructor(config: PluginFrameworkConfig) {
     super();
-    this.config = config;
-    
+
     this.loader = new PluginLoader(config.pluginPaths);
     this.registry = new PluginRegistry(config.registryPath, config.pluginPaths);
     this.validator = new PluginValidator();
@@ -92,7 +94,8 @@ export class PluginManager extends EventEmitter {
 
       this.emit('pluginInstalled', { pluginId: metadata.id, metadata });
     } catch (error) {
-      this.emit('pluginError', { error: error.message, pluginPath });
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.emit('pluginError', { error: err.message, pluginPath });
       throw error;
     }
   }
@@ -112,7 +115,8 @@ export class PluginManager extends EventEmitter {
       
       this.emit('pluginUninstalled', { pluginId });
     } catch (error) {
-      this.emit('pluginError', { error: error.message, pluginId });
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.emit('pluginError', { error: err.message, pluginId });
       throw error;
     }
   }
@@ -146,7 +150,8 @@ export class PluginManager extends EventEmitter {
       this.emit('pluginEnabled', { pluginId });
     } catch (error) {
       await this.registry.updatePluginStatus(pluginId, 'error', error.message);
-      this.emit('pluginError', { error: error.message, pluginId });
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.emit('pluginError', { error: err.message, pluginId });
       throw error;
     }
   }
@@ -167,7 +172,8 @@ export class PluginManager extends EventEmitter {
       
       this.emit('pluginDisabled', { pluginId });
     } catch (error) {
-      this.emit('pluginError', { error: error.message, pluginId });
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.emit('pluginError', { error: err.message, pluginId });
       throw error;
     }
   }
@@ -315,7 +321,8 @@ export class PluginManager extends EventEmitter {
         await this.registerPluginIntents(entry.metadata.id, this.loader.getPlugin(entry.metadata.id)!);
       } catch (error) {
         console.warn(`Failed to auto-load plugin ${entry.metadata.id}:`, error.message);
-        await this.registry.updatePluginStatus(entry.metadata.id, 'error', error.message);
+        const err = error instanceof Error ? error : new Error(String(error));
+        await this.registry.updatePluginStatus(entry.metadata.id, 'error', err.message);
       }
     }
   }

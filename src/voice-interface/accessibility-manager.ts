@@ -219,7 +219,7 @@ export class AccessibilityManager extends EventEmitter {
   /**
    * Handle escape key
    */
-  private handleEscape(event: KeyboardEvent): void {
+  private handleEscape(_event: KeyboardEvent): void {
     // Close any open dialogs or panels
     const openDialogs = document.querySelectorAll('[role="dialog"]:not(.hidden)');
     openDialogs.forEach(dialog => {
@@ -276,7 +276,7 @@ export class AccessibilityManager extends EventEmitter {
         break;
     }
     
-    if (newIndex !== currentIndex && items[newIndex]) {
+    if (newIndex !== currentIndex && items[newIndex] !== undefined) {
       items[newIndex].focus();
     }
   }
@@ -416,8 +416,9 @@ export class AccessibilityManager extends EventEmitter {
     
     dialogs.forEach(dialog => {
       dialog.addEventListener('keydown', (event) => {
-        if (event.key === 'Tab') {
-          this.trapFocus(event, dialog as HTMLElement);
+        const keyboardEvent = event as KeyboardEvent;
+        if (keyboardEvent.key === 'Tab') {
+          this.trapFocus(keyboardEvent, dialog as HTMLElement);
         }
       });
     });
@@ -471,11 +472,17 @@ export class AccessibilityManager extends EventEmitter {
 
       if (event.code === 'Space' && event.ctrlKey) {
         event.preventDefault();
-        this.activateSwitchElement(switchElements[switchIndex]);
+        const currentElement = switchElements[switchIndex];
+        if (currentElement) {
+          this.activateSwitchElement(currentElement);
+        }
       } else if (event.code === 'ArrowRight' && event.ctrlKey) {
         event.preventDefault();
         switchIndex = (switchIndex + 1) % switchElements.length;
-        this.highlightSwitchElement(switchElements[switchIndex]);
+        const nextElement = switchElements[switchIndex];
+        if (nextElement) {
+          this.highlightSwitchElement(nextElement);
+        }
       }
     });
   }
@@ -519,13 +526,19 @@ export class AccessibilityManager extends EventEmitter {
     let touchStartY = 0;
 
     container.addEventListener('touchstart', (event) => {
-      touchStartX = event.touches[0].clientX;
-      touchStartY = event.touches[0].clientY;
+      const touch = event.touches[0];
+      if (touch) {
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+      }
     });
 
     container.addEventListener('touchend', (event) => {
-      const touchEndX = event.changedTouches[0].clientX;
-      const touchEndY = event.changedTouches[0].clientY;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+
+      const touchEndX = touch.clientX;
+      const touchEndY = touch.clientY;
       
       const deltaX = touchEndX - touchStartX;
       const deltaY = touchEndY - touchStartY;

@@ -155,7 +155,7 @@ export class ZeroTrustFramework {
       // Step 4: Record successful access
       this.recordSecurityEvent({
         id: `access_granted_${Date.now()}`,
-        type: SecurityEventType.UNAUTHORIZED_ACCESS, // Using as general access event
+        type: SecurityEventType.ACCESS_GRANTED,
         severity: SecuritySeverity.LOW,
         timestamp: Date.now(),
         context: request.context,

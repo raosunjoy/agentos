@@ -149,11 +149,11 @@ export class WCAGCompliance extends EventEmitter {
     document.body.removeChild(div);
     
     const match = computedColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-    if (match) {
+    if (match && match[1] && match[2] && match[3]) {
       return {
-        r: parseInt(match[1]),
-        g: parseInt(match[2]),
-        b: parseInt(match[3])
+        r: parseInt(match[1], 10),
+        g: parseInt(match[2], 10),
+        b: parseInt(match[3], 10)
       };
     }
     
@@ -171,7 +171,7 @@ export class WCAGCompliance extends EventEmitter {
       return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
     });
     
-    return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+    return 0.2126 * (rs || 0) + 0.7152 * (gs || 0) + 0.0722 * (bs || 0);
   }
 
   /**
@@ -240,7 +240,7 @@ export class WCAGCompliance extends EventEmitter {
         htmlElement.getAttribute('aria-label') ||
         htmlElement.getAttribute('aria-labelledby') ||
         htmlElement.getAttribute('title') ||
-        (htmlElement as HTMLInputElement).labels?.length > 0 ||
+        ((htmlElement as HTMLInputElement).labels?.length || 0) > 0 ||
         htmlElement.textContent?.trim();
 
       if (!hasLabel) {
@@ -335,8 +335,8 @@ export class WCAGCompliance extends EventEmitter {
     formControls.forEach(control => {
       const htmlElement = control as HTMLInputElement;
       
-      const hasLabel = 
-        htmlElement.labels?.length > 0 ||
+      const hasLabel =
+        (htmlElement.labels?.length || 0) > 0 ||
         htmlElement.getAttribute('aria-label') ||
         htmlElement.getAttribute('aria-labelledby') ||
         htmlElement.getAttribute('title');
@@ -406,7 +406,6 @@ export class WCAGCompliance extends EventEmitter {
    */
   private checkFocusManagement(container: HTMLElement): WCAGViolation[] {
     const violations: WCAGViolation[] = [];
-    const focusableElements = container.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])');
 
     // Check for focus traps in modals
     const modals = container.querySelectorAll('[role="dialog"], [role="alertdialog"]');

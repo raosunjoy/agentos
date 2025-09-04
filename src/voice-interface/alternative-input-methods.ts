@@ -100,8 +100,10 @@ export class AlternativeInputMethods extends EventEmitter {
   private handleTouchStart(event: TouchEvent): void {
     if (event.touches.length === 1) {
       const touch = event.touches[0];
-      this.gestureStartPos = { x: touch.clientX, y: touch.clientY };
-      this.gestureStartTime = Date.now();
+      if (touch) {
+        this.gestureStartPos = { x: touch.clientX, y: touch.clientY };
+        this.gestureStartTime = Date.now();
+      }
     }
   }
 
@@ -121,10 +123,12 @@ export class AlternativeInputMethods extends EventEmitter {
   private handleTouchEnd(event: TouchEvent): void {
     if (event.changedTouches.length === 1) {
       const touch = event.changedTouches[0];
-      const endPos = { x: touch.clientX, y: touch.clientY };
-      const duration = Date.now() - this.gestureStartTime;
-      
-      this.recognizeGesture(this.gestureStartPos, endPos, duration, event.target as HTMLElement);
+      if (touch) {
+        const endPos = { x: touch.clientX, y: touch.clientY };
+        const duration = Date.now() - this.gestureStartTime;
+
+        this.recognizeGesture(this.gestureStartPos, endPos, duration, event.target as HTMLElement);
+      }
     }
   }
 
@@ -141,7 +145,7 @@ export class AlternativeInputMethods extends EventEmitter {
   /**
    * Handle mouse move for desktop gesture simulation
    */
-  private handleMouseMove(event: MouseEvent): void {
+  private handleMouseMove(_event: MouseEvent): void {
     // Could add visual feedback for gesture in progress
   }
 
@@ -162,9 +166,9 @@ export class AlternativeInputMethods extends EventEmitter {
    * Recognize gesture from start and end positions
    */
   private recognizeGesture(
-    start: { x: number; y: number }, 
-    end: { x: number; y: number }, 
-    duration: number,
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+    _duration: number,
     target: HTMLElement
   ): void {
     const deltaX = end.x - start.x;
@@ -213,16 +217,19 @@ export class AlternativeInputMethods extends EventEmitter {
       'Enter': { type: 'tap', target: document.activeElement as HTMLElement }
     };
 
-    if (event.altKey && gestureKeys[event.key]) {
-      event.preventDefault();
-      this.emitGesture(gestureKeys[event.key]);
+    if (event.altKey) {
+      const gestureKey = gestureKeys[event.key];
+      if (gestureKey) {
+        event.preventDefault();
+        this.emitGesture(gestureKey);
+      }
     }
   }
 
   /**
    * Setup switch control for motor disabilities
    */
-  private setupSwitchControl(container: HTMLElement): void {
+  private setupSwitchControl(_container: HTMLElement): void {
     if (!this.inputMethods.get('switch')?.enabled) return;
 
     document.addEventListener('keydown', this.handleSwitchKeyboard.bind(this));
@@ -279,7 +286,7 @@ export class AlternativeInputMethods extends EventEmitter {
   private stopAutoScan(): void {
     if (this.scanTimer) {
       clearInterval(this.scanTimer);
-      this.scanTimer = undefined;
+      this.scanTimer = null;
     }
   }
 
@@ -290,7 +297,10 @@ export class AlternativeInputMethods extends EventEmitter {
     if (this.switchElements.length === 0) return;
 
     this.currentSwitchIndex = (this.currentSwitchIndex + 1) % this.switchElements.length;
-    this.highlightSwitchElement(this.switchElements[this.currentSwitchIndex]);
+    const nextElement = this.switchElements[this.currentSwitchIndex];
+    if (nextElement) {
+      this.highlightSwitchElement(nextElement);
+    }
   }
 
   /**
@@ -299,11 +309,14 @@ export class AlternativeInputMethods extends EventEmitter {
   private moveToPreviousSwitchElement(): void {
     if (this.switchElements.length === 0) return;
 
-    this.currentSwitchIndex = this.currentSwitchIndex === 0 
-      ? this.switchElements.length - 1 
+    this.currentSwitchIndex = this.currentSwitchIndex === 0
+      ? this.switchElements.length - 1
       : this.currentSwitchIndex - 1;
-    
-    this.highlightSwitchElement(this.switchElements[this.currentSwitchIndex]);
+
+    const prevElement = this.switchElements[this.currentSwitchIndex];
+    if (prevElement) {
+      this.highlightSwitchElement(prevElement);
+    }
   }
 
   /**
@@ -339,7 +352,9 @@ export class AlternativeInputMethods extends EventEmitter {
     if (this.switchElements.length === 0) return;
 
     const element = this.switchElements[this.currentSwitchIndex];
-    element.click();
+    if (element) {
+      element.click();
+    }
     
     this.emit('switchElementActivated', {
       element,

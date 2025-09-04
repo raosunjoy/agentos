@@ -5,7 +5,6 @@
 
 import { EventEmitter } from 'events';
 import {
-  CaregiverProfile,
   AccessAuditLog,
   AuditAction
 } from './types';
@@ -283,7 +282,7 @@ export class CommunicationService extends EventEmitter {
       ? await this.encryptionService.encrypt(content)
       : { data: content, iv: '', keyId: '' };
 
-    const message: Message = {
+    const message: any = {
       id: this.generateMessageId(),
       channelId,
       senderId,
@@ -291,9 +290,9 @@ export class CommunicationService extends EventEmitter {
       content: encryptedContent,
       timestamp: new Date(),
       edited: false,
-      reactions: [],
-      metadata
+      reactions: []
     };
+    if (metadata !== undefined) message.metadata = metadata;
 
     // Store message
     const channelMessages = this.messages.get(channelId) || [];
@@ -558,16 +557,16 @@ export class CommunicationService extends EventEmitter {
     location?: Location,
     caregiverIds?: string[]
   ): Promise<EmergencyBroadcast> {
-    const broadcast: EmergencyBroadcast = {
+    const broadcast: any = {
       id: this.generateBroadcastId(),
       userId,
       type,
       message,
-      location,
       timestamp: new Date(),
       recipients: caregiverIds || [], // Would get from caregiver registry
       acknowledged: []
     };
+    if (location !== undefined) broadcast.location = location;
 
     this.emergencyBroadcasts.set(broadcast.id, broadcast);
 
@@ -621,12 +620,13 @@ export class CommunicationService extends EventEmitter {
     }
 
     // Add acknowledgment
-    broadcast.acknowledged.push({
+    const acknowledgment: any = {
       caregiverId,
       acknowledgedAt: new Date(),
-      response,
-      estimatedArrival
-    });
+      response
+    };
+    if (estimatedArrival !== undefined) acknowledgment.estimatedArrival = estimatedArrival;
+    broadcast.acknowledged.push(acknowledgment);
 
     this.emergencyBroadcasts.set(broadcastId, broadcast);
 

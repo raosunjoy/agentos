@@ -68,6 +68,7 @@ export interface SecurityEvent {
 }
 
 export enum SecurityEventType {
+  ACCESS_GRANTED = 'access_granted',
   UNAUTHORIZED_ACCESS = 'unauthorized_access',
   SUSPICIOUS_BEHAVIOR = 'suspicious_behavior',
   DATA_BREACH_ATTEMPT = 'data_breach_attempt',

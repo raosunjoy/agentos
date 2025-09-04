@@ -1,0 +1,80 @@
+{
+  "id": "weather-plugin",
+  "name": "Weather Information Plugin",
+  "version": "1.0.0",
+  "description": "Provides weather information and forecasts",
+  "author": "AgentOS Team",
+  "license": "MIT",
+  "homepage": "https://github.com/agentos/weather-plugin",
+  "repository": "https://github.com/agentos/weather-plugin",
+  "keywords": ["weather", "forecast", "temperature", "climate"],
+  "agentOSVersion": "1.0.0",
+  "dependencies": {
+    "node-fetch": "^2.6.0"
+  },
+  "permissions": [
+    {
+      "type": "network",
+      "resource": "weather-api",
+      "access": "read",
+      "description": "Access weather data from external APIs",
+      "required": true
+    },
+    {
+      "type": "data",
+      "resource": "location",
+      "access": "read",
+      "description": "Read user location for weather queries",
+      "required": false
+    }
+  ],
+  "intents": [
+    {
+      "intentId": "get_weather",
+      "name": "Get Current Weather",
+      "description": "Get current weather conditions",
+      "examples": [
+        "What's the weather like?",
+        "How's the weather today?",
+        "Is it raining outside?"
+      ],
+      "parameters": [
+        {
+          "name": "location",
+          "type": "string",
+          "required": false,
+          "description": "Location for weather query (defaults to current location)"
+        }
+      ],
+      "requiredPermissions": ["network"]
+    },
+    {
+      "intentId": "get_forecast",
+      "name": "Get Weather Forecast",
+      "description": "Get weather forecast for upcoming days",
+      "examples": [
+        "What's the forecast for tomorrow?",
+        "Will it rain this weekend?",
+        "What's the weather like next week?"
+      ],
+      "parameters": [
+        {
+          "name": "days",
+          "type": "number",
+          "required": false,
+          "description": "Number of days for forecast (1-7)",
+          "defaultValue": 3
+        },
+        {
+          "name": "location",
+          "type": "string",
+          "required": false,
+          "description": "Location for forecast"
+        }
+      ],
+      "requiredPermissions": ["network"]
+    }
+  ],
+  "createdAt": "2025-01-04T00:00:00.000Z",
+  "updatedAt": "2025-01-04T00:00:00.000Z"
+}
