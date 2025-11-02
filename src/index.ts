@@ -1,215 +1,274 @@
 /**
- * AgentOS - The Future of Mobile Computing
- *
- * Main entry point for the AgentOS platform
- * Initializes all core systems and provides unified API
+ * AgentOS Main Entry Point
+ * Production-ready mobile computing platform with AI orchestration
  */
 
-// Core system exports
-export * from './intelligence-layer';
-export * from './plugin-framework';
-export * from './voice-interface';
-export * from './performance';
-export * from './caregiver';
-
-// Core systems
-export * from './core/logging';
-export * from './core/errors';
-
-// Configuration and types
-export type { AgentOSConfig } from './types/config';
-export type { AgentOSStatus } from './types/system';
-
-// Import types locally to avoid naming conflicts
-import type { AgentOSConfig as ConfigType } from './types/config';
-import type { AgentOSStatus as StatusType } from './types/system';
-
-// Import core systems
-import { initializeLogging, systemLogger, createTimer } from './core/logging';
+import 'reflect-metadata'; // Required for dependency injection
+import { AgentOS } from './core/agentos';
+import { HttpServer } from './core/server/http-server';
+import { gracefulShutdown } from './core/lifecycle/graceful-shutdown';
+import { ConfigValidator } from './core/config/config-validator';
+import { systemLogger } from './core/logging';
 import { errorHandler } from './core/errors';
 
-// Main AgentOS class
-export class AgentOS {
-  private static instance: AgentOS;
-  private isInitialized = false;
-  private config: ConfigType;
-  private logger = systemLogger('agentos');
+const logger = systemLogger('main');
 
-  private constructor(config: ConfigType) {
-    this.config = config;
+/**
+ * Main application class
+ */
+class AgentOSApplication {
+  private agentOS?: AgentOS;
+  private httpServer?: HttpServer;
+  private configValidator: ConfigValidator;
+
+  constructor() {
+    this.configValidator = new ConfigValidator();
   }
 
   /**
-   * Get singleton instance of AgentOS
+   * Initialize the application
    */
-  public static getInstance(config?: ConfigType): AgentOS {
-    if (!AgentOS.instance) {
-      AgentOS.instance = new AgentOS(config || AgentOS.getDefaultConfig());
-    }
-    return AgentOS.instance;
-  }
-
-  /**
-   * Initialize all AgentOS systems
-   */
-  public async initialize(): Promise<void> {
-    if (this.isInitialized) {
-      this.logger.info('AgentOS already initialized');
-      return;
-    }
-
-    const timer = createTimer('agentos_initialization');
-
+  async initialize(): Promise<void> {
     try {
-      this.logger.info('Initializing AgentOS...', {
-        version: this.config.version,
-        environment: this.config.environment
-      });
+      logger.info('Initializing AgentOS Application...');
 
-      // 0. Initialize core systems first
-      this.logger.info('Initializing logging system...');
-      initializeLogging({
-        logLevel: this.config.logLevel || 'info'
-      });
-      this.logger.info('Logging system initialized');
-
-      this.logger.info('Initializing error handling system...');
-      // Error handler is already initialized as singleton
-      this.logger.info('Error handling system initialized');
-
-      // 1. Initialize plugin framework first (other systems depend on it)
-      this.logger.info('Initializing plugin framework...');
-      // Plugin initialization will be implemented
-
-      // 2. Initialize intelligence layer
-      this.logger.info('Initializing intelligence layer...');
-      // Intelligence layer initialization will be implemented
-
-      // 3. Initialize voice interface
-      this.logger.info('Initializing voice interface...');
-      // Voice interface initialization will be implemented
-
-      // 4. Initialize performance optimization
-      this.logger.info('Initializing performance optimization...');
-      // Performance optimization initialization will be implemented
-
-      // 5. Initialize caregiver system
-      this.logger.info('Initializing caregiver system...');
-      // Caregiver system initialization will be implemented
-
-      this.isInitialized = true;
-      const duration = timer.end();
-
-      this.logger.info('AgentOS initialized successfully', {
-        duration,
-        version: this.config.version,
-        environment: this.config.environment
-      });
-
-    } catch (error) {
-      const duration = timer.end();
-      await errorHandler.handleError(error, {
-        component: 'agentos',
-        operation: 'initialization',
-        duration
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Shutdown AgentOS and cleanup resources
-   */
-  public async shutdown(): Promise<void> {
-    const timer = createTimer('agentos_shutdown');
-
-    try {
-      this.logger.info('Shutting down AgentOS...');
-
-      // Shutdown systems in reverse order
-      // Implementation will be added as systems are completed
-
-      this.isInitialized = false;
-      const duration = timer.end();
-
-      this.logger.info('AgentOS shutdown complete', { duration });
-
-    } catch (error) {
-      const duration = timer.end();
-      await errorHandler.handleError(error, {
-        component: 'agentos',
-        operation: 'shutdown',
-        duration
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Get current system status
-   */
-  public getStatus(): StatusType {
-    return {
-      initialized: this.isInitialized,
-      version: this.config.version,
-      environment: this.config.environment,
-      uptime: process.uptime(),
-      memoryUsage: process.memoryUsage(),
-      // Additional status metrics will be added
-    };
-  }
-
-  /**
-   * Get default configuration
-   */
-  private static getDefaultConfig(): ConfigType {
-    return {
-      version: '0.1.0',
-      environment: 'development',
-      logLevel: 'info',
-      enablePlugins: true,
-      enableSecurity: true,
-      enablePerformanceOptimization: true,
-      enableVoiceInterface: true,
-      enableCaregiverSystem: true,
-      maxMemoryUsage: 512 * 1024 * 1024, // 512MB
-      maxCPUUsage: 80, // 80%
-      pluginSandbox: true,
-      securityLevel: 'high',
-      nlp: {
-        confidenceThreshold: 0.7,
-        cacheSize: 100,
-        enableElderlyOptimizations: true,
-        supportedLanguages: ['en', 'es', 'fr']
-      },
-      voice: {
-        wakeWord: 'agent',
-        speechRate: 0.8,
-        pitch: 1.0,
-        volume: 0.7
-      },
-      performance: {
-        adaptiveScaling: true,
-        batteryOptimization: true,
-        thermalManagement: true,
-        memoryManagement: true
+      // Validate configuration
+      const configValidation = this.configValidator.validateEnvironment();
+      if (!configValidation.isValid) {
+        logger.error('Configuration validation failed', {
+          errors: configValidation.errors
+        });
+        throw new Error('Invalid configuration');
       }
+
+      // Create AgentOS instance with validated config
+      const agentOSConfig = {
+        version: '1.0.0',
+        environment: (process.env.NODE_ENV as any) || 'development',
+        logLevel: (process.env.LOG_LEVEL as any) || 'info',
+        enablePlugins: true,
+        enableSecurity: true,
+        enablePerformanceOptimization: true,
+        enableVoiceInterface: true,
+        enableCaregiverSystem: false, // Enable based on license/features
+        maxMemoryUsage: 2 * 1024 * 1024 * 1024, // 2GB
+        maxCPUUsage: 80,
+        pluginSandbox: true,
+        securityLevel: 'high',
+        nlp: {
+          confidenceThreshold: 0.8,
+          cacheSize: 1000,
+          enableElderlyOptimizations: true,
+          supportedLanguages: ['en', 'es', 'fr']
+        },
+        voice: {
+          wakeWord: 'hey agent',
+          speechRate: 1.0,
+          pitch: 1.0,
+          volume: 0.8,
+          enableNoiseFiltering: true,
+          enableElderlyOptimizations: true,
+          supportedLanguages: ['en', 'es', 'fr']
+        },
+        performance: {
+          adaptiveScaling: true,
+          batteryOptimization: true,
+          thermalManagement: true,
+          memoryManagement: true,
+          maxMemoryUsage: 2 * 1024 * 1024 * 1024,
+          maxCPUUsage: 80,
+          enableModelQuantization: true,
+          targetBatteryLifeHours: 8
+        },
+        caregiver: {
+          enableEmergencyAlerts: true,
+          enableDailyReports: true,
+          enableRemoteAccess: true,
+          maxConcurrentSessions: 5,
+          sessionTimeoutMinutes: 30,
+          auditLogRetentionDays: 90
+        }
+      };
+
+      this.agentOS = new AgentOS(agentOSConfig);
+      await this.agentOS.initialize();
+
+      // Create HTTP server
+      const serverConfig = {
+        port: parseInt(process.env.PORT || '3000'),
+        host: process.env.HOST || '0.0.0.0',
+        enableHealthCheck: true,
+        enableMetrics: true,
+        enableCompression: true,
+        enableSecurityHeaders: true
+      };
+
+      this.httpServer = new HttpServer(serverConfig);
+      await this.httpServer.start();
+
+      logger.info('AgentOS Application initialized successfully', {
+        port: serverConfig.port,
+        environment: agentOSConfig.environment
+      });
+
+    } catch (error) {
+      logger.error('Failed to initialize AgentOS Application', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Start the application
+   */
+  async start(): Promise<void> {
+    try {
+      logger.info('Starting AgentOS Application...');
+
+      // Application is already initialized and running
+      // Additional startup logic can go here
+
+      logger.info('AgentOS Application started successfully');
+
+    } catch (error) {
+      logger.error('Failed to start AgentOS Application', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Shutdown the application
+   */
+  async shutdown(): Promise<void> {
+    try {
+      logger.info('Shutting down AgentOS Application...');
+
+      // Shutdown HTTP server
+      if (this.httpServer) {
+        await this.httpServer.stop();
+      }
+
+      // Shutdown AgentOS
+      if (this.agentOS) {
+        await this.agentOS.shutdown();
+      }
+
+      logger.info('AgentOS Application shutdown complete');
+
+    } catch (error) {
+      logger.error('Error during AgentOS Application shutdown', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get application status
+   */
+  getStatus(): any {
+    return {
+      application: 'agentos',
+      version: '1.0.0',
+      status: 'running',
+      environment: process.env.NODE_ENV || 'development',
+      agentOS: this.agentOS?.getStatus(),
+      httpServer: this.httpServer ? {
+        port: this.httpServer.getConfig().port,
+        host: this.httpServer.getConfig().host
+      } : null,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      timestamp: new Date().toISOString()
     };
   }
 }
 
-// Convenience functions for quick setup
-export async function initializeAgentOS(config?: ConfigType): Promise<AgentOS> {
-  const agentOS = AgentOS.getInstance(config);
-  await agentOS.initialize();
-  return agentOS;
+// Global application instance
+let application: AgentOSApplication;
+
+/**
+ * Initialize AgentOS
+ */
+export async function initializeAgentOS(): Promise<AgentOSApplication> {
+  if (!application) {
+    application = new AgentOSApplication();
+    await application.initialize();
+  }
+  return application;
 }
 
+/**
+ * Start AgentOS
+ */
+export async function startAgentOS(): Promise<void> {
+  const app = await initializeAgentOS();
+  await app.start();
+}
+
+/**
+ * Shutdown AgentOS
+ */
 export async function shutdownAgentOS(): Promise<void> {
-  const agentOS = AgentOS.getInstance();
-  await agentOS.shutdown();
+  if (application) {
+    await application.shutdown();
+  }
 }
 
-// Export version information
-export const AGENTOS_VERSION = '0.1.0';
-export const AGENTOS_API_VERSION = '1.0.0';
+/**
+ * Get application status
+ */
+export function getApplicationStatus(): any {
+  return application?.getStatus() || { status: 'not_initialized' };
+}
+
+// Graceful shutdown handlers
+gracefulShutdown.registerHandler({
+  name: 'application',
+  priority: 100, // Highest priority - shutdown application last
+  timeout: 15000,
+  handler: async () => {
+    await shutdownAgentOS();
+  }
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Promise Rejection', {
+    reason: reason instanceof Error ? reason.message : String(reason),
+    promise: promise.toString()
+  });
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception', {
+    error: error.message,
+    stack: error.stack
+  });
+
+  // Attempt graceful shutdown
+  shutdownAgentOS().finally(() => {
+    process.exit(1);
+  });
+});
+
+// Export main classes
+export { AgentOS } from './core/agentos';
+export { HttpServer } from './core/server/http-server';
+export { HealthCheck } from './core/health/health-check';
+export { MetricsCollector } from './core/metrics/metrics-collector';
+export { ConfigValidator } from './core/config/config-validator';
+
+// Main execution
+if (require.main === module) {
+  startAgentOS().catch((error) => {
+    logger.error('Failed to start AgentOS', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    process.exit(1);
+  });
+}
