@@ -254,7 +254,8 @@ export class CoherenceMonitor {
       return { totalFlux: avgFlux } as T;
     }
 
-    return recent[recent.length - 1];
+    // Return last item (guaranteed to exist due to length check above)
+    return recent[recent.length - 1] as T;
   }
 
   /**

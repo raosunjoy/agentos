@@ -153,7 +153,7 @@ describe('CoherenceMonitor', () => {
         totalFlux: 9500
       });
 
-      const phi1 = monitor.calculatePhiInvariant();
+      monitor.calculatePhiInvariant();
 
       // Wait a bit
       jest.advanceTimersByTime(1000);

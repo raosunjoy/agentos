@@ -3,6 +3,9 @@
  * Global test configuration and utilities
  */
 
+// Make this a module
+export {};
+
 // Mock console methods to reduce noise during testing
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
@@ -23,7 +26,7 @@ afterAll(() => {
 });
 
 // Global test utilities
-global.testUtils = {
+(global as any).testUtils = {
   // Create a delay for async tests
   delay: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)),
 
