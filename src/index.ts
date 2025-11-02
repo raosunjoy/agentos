@@ -260,7 +260,7 @@ process.on('uncaughtException', (error) => {
 export { AgentOS } from './core/agentos';
 export { HttpServer } from './core/server/http-server';
 export { HealthCheck } from './core/health/health-check';
-export { MetricsCollector } from './core/metrics/metrics-collector';
+export { MetricsCollector, PRDMetricsTracker } from './core/metrics';
 export { ConfigValidator } from './core/config/config-validator';
 
 // Export Phase 5 Advanced Features
@@ -268,6 +268,11 @@ export { AIScheduler } from './performance/ai-scheduler';
 export { ModelQuantizer } from './performance/model-quantizer';
 export { CaregiverIntegration } from './caregiver/caregiver-integration';
 export { PluginMarketplace } from './plugin-marketplace/marketplace';
+
+// Export PRD v1.3 Features
+export { CoherenceMonitor } from './intelligence-layer/rgpx';
+export { RGPxWorkflowIntegration } from './intelligence-layer/workflow/rgpx-integration';
+export { BrowserManager } from './integration/browser';
 
 // Main execution
 if (require.main === module) {
