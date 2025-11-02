@@ -14,11 +14,13 @@ import {
   StepExecutionResult,
   WorkflowEventListener
 } from './types';
+import { RGPxWorkflowIntegration } from './rgpx-integration';
 
 export class WorkflowEngine {
   private executions = new Map<string, WorkflowExecution>();
   private listeners: WorkflowEventListener[] = [];
   private stepExecutors = new Map<string, (context: StepExecutionContext) => Promise<StepExecutionResult>>();
+  private rgpxIntegration?: RGPxWorkflowIntegration;
 
   /**
    * Register a step executor for a specific service type
@@ -35,6 +37,23 @@ export class WorkflowEngine {
    */
   addListener(listener: WorkflowEventListener): void {
     this.listeners.push(listener);
+  }
+
+  /**
+   * Enable RGPx coherence monitoring for workflows
+   */
+  enableRGPxIntegration(): RGPxWorkflowIntegration {
+    if (!this.rgpxIntegration) {
+      this.rgpxIntegration = new RGPxWorkflowIntegration();
+    }
+    return this.rgpxIntegration;
+  }
+
+  /**
+   * Get RGPx integration instance
+   */
+  getRGPxIntegration(): RGPxWorkflowIntegration | undefined {
+    return this.rgpxIntegration;
   }
 
   /**
@@ -72,12 +91,23 @@ export class WorkflowEngine {
       
       execution.status = WorkflowStatus.COMPLETED;
       execution.endTime = new Date();
+      
+      // Record RGPx metrics if enabled
+      if (this.rgpxIntegration) {
+        await this.rgpxIntegration.recordWorkflowMetrics(execution);
+      }
+      
       this.notifyListeners('onWorkflowCompleted', execution);
       
     } catch (error) {
       execution.status = WorkflowStatus.FAILED;
       execution.endTime = new Date();
       execution.error = this.createWorkflowError(error);
+      
+      // Record RGPx metrics even for failed workflows
+      if (this.rgpxIntegration) {
+        await this.rgpxIntegration.recordWorkflowMetrics(execution);
+      }
       
       this.notifyListeners('onWorkflowFailed', execution);
       
