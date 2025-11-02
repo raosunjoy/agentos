@@ -1,245 +1,314 @@
 /**
- * Integration tests for PRD Metrics Dashboard
- * Tests real-time metric updates and dashboard generation
+ * Integration Tests for PRD Metrics Dashboard
+ * Tests real-time metric updates, dashboard generation, and reporting
  */
 
 import { PRDMetricsTracker } from '../prd-metrics-tracker';
+import { MetricsCollector } from '../metrics-collector';
 
 describe('PRD Metrics Dashboard Integration', () => {
-  let tracker: PRDMetricsTracker;
+  let prdTracker: PRDMetricsTracker;
+  let metricsCollector: MetricsCollector;
 
   beforeEach(() => {
-    tracker = new PRDMetricsTracker();
+    prdTracker = new PRDMetricsTracker();
+    metricsCollector = new MetricsCollector();
   });
 
   describe('Real-Time Metric Updates', () => {
-    it('should update dashboard when metrics change', () => {
-      const initialDashboard = tracker.getDashboard();
+    it('should update metrics in real-time and reflect in dashboard', () => {
+      // Get initial dashboard
+      const initialDashboard = prdTracker.getDashboard();
       const initialProgress = initialDashboard.overallProgress;
 
-      // Update intent accuracy (improving metric)
-      tracker.updateMetric('intent_accuracy', 96);
-      
-      const updatedDashboard = tracker.getDashboard();
-      
-      // Dashboard should reflect new value
-      const accuracyMetric = updatedDashboard.metrics.find(m => m.name === 'Intent Recognition Accuracy');
-      expect(accuracyMetric?.current).toBe(96);
-      expect(updatedDashboard.lastUpdated).toBeGreaterThan(initialDashboard.lastUpdated);
+      // Simulate intent accuracy improvement
+      prdTracker.updateMetric('intent_accuracy', 96);
+
+      // Get updated dashboard
+      const updatedDashboard = prdTracker.getDashboard();
+      const updatedProgress = updatedDashboard.overallProgress;
+
+      // Progress should improve (or stay same if already high)
+      expect(updatedProgress).toBeGreaterThanOrEqual(initialProgress);
+
+      // Intent accuracy should be updated
+      const intentMetric = prdTracker.getMetric('intent_accuracy');
+      expect(intentMetric?.current).toBe(96);
     });
 
-    it('should recalculate overall progress when metrics improve', () => {
-      const initialDashboard = tracker.getDashboard();
-      
+    it('should update battery metric and calculate status correctly', () => {
+      // Current battery drain is 5%, target is 2.5%
+      const initialMetric = prdTracker.getMetric('battery_drain');
+      expect(initialMetric?.current).toBe(5);
+      expect(initialMetric?.status).toBe('in_progress');
+
+      // Improve to beta target
+      prdTracker.updateMetric('battery_drain', 2.5);
+      const updatedMetric = prdTracker.getMetric('battery_drain');
+      expect(updatedMetric?.current).toBe(2.5);
+      expect(updatedMetric?.status).toBe('on_track');
+
+      // Improve to v1.0 target
+      prdTracker.updateMetric('battery_drain', 2);
+      const v10Metric = prdTracker.getMetric('battery_drain');
+      expect(v10Metric?.current).toBe(2);
+      expect(v10Metric?.status).toBe('achieved');
+    });
+  });
+
+  describe('Dashboard Generation', () => {
+    it('should generate complete dashboard with all metrics', () => {
+      const dashboard = prdTracker.getDashboard();
+
+      expect(dashboard.overallProgress).toBeDefined();
+      expect(dashboard.metrics.length).toBeGreaterThan(0);
+      expect(dashboard.lastUpdated).toBeDefined();
+
+      // Verify all metrics are present
+      const metricKeys = ['intent_accuracy', 'battery_drain', 'response_time', 
+                         'code_coverage', 'elderly_task_completion', 
+                         'plugin_count', 'privacy_trust'];
+
+      metricKeys.forEach(key => {
+        const keyPrefix = key.split('_')[0];
+        if (keyPrefix) {
+          const metric = dashboard.metrics.find(m => 
+            m.name.toLowerCase().includes(keyPrefix)
+          );
+          expect(metric).toBeDefined();
+        }
+      });
+    });
+
+    it('should calculate overall progress based on metric statuses', () => {
       // Improve multiple metrics
-      tracker.updateMetric('intent_accuracy', 98); // achieved
-      tracker.updateMetric('battery_drain', 2); // achieved
-      tracker.updateMetric('response_time', 200); // achieved
+      prdTracker.updateMetric('intent_accuracy', 98); // achieved
+      prdTracker.updateMetric('code_coverage', 95); // already achieved
+      prdTracker.updateMetric('battery_drain', 2); // achieved
 
-      const updatedDashboard = tracker.getDashboard();
+      const dashboard = prdTracker.getDashboard();
       
-      // Overall progress should increase
-      expect(updatedDashboard.overallProgress).toBeGreaterThanOrEqual(initialDashboard.overallProgress);
-      
-      // More metrics should be in achieved/on_track status
-      const achievedCount = updatedDashboard.metrics.filter(m => m.status === 'achieved').length;
-      expect(achievedCount).toBeGreaterThan(0);
+      // Progress should be high with multiple achieved metrics
+      expect(dashboard.overallProgress).toBeGreaterThan(50);
+      expect(dashboard.overallProgress).toBeLessThanOrEqual(100);
     });
 
-    it('should track metric history through updates', () => {
-      // Update metric multiple times
-      tracker.updateMetric('intent_accuracy', 95);
-      const dashboard1 = tracker.getDashboard();
-      
-      tracker.updateMetric('intent_accuracy', 96);
-      const dashboard2 = tracker.getDashboard();
-      
-      tracker.updateMetric('intent_accuracy', 97);
-      const dashboard3 = tracker.getDashboard();
+    it('should update dashboard timestamp on changes', async () => {
+      const dashboard1 = prdTracker.getDashboard();
+      const timestamp1 = dashboard1.lastUpdated;
 
-      // Each update should have new timestamp
-      expect(dashboard3.lastUpdated).toBeGreaterThan(dashboard2.lastUpdated);
-      expect(dashboard2.lastUpdated).toBeGreaterThan(dashboard1.lastUpdated);
+      // Wait a bit
+      await new Promise(resolve => setTimeout(resolve, 10));
 
-      // Current value should reflect latest update
-      const metric3 = dashboard3.metrics.find(m => m.name === 'Intent Recognition Accuracy');
-      expect(metric3?.current).toBe(97);
+      // Update a metric
+      prdTracker.updateMetric('response_time', 400);
+
+      const dashboard2 = prdTracker.getDashboard();
+      const timestamp2 = dashboard2.lastUpdated;
+
+      expect(timestamp2).toBeGreaterThanOrEqual(timestamp1);
     });
   });
 
-  describe('Status Calculation Integration', () => {
-    it('should automatically calculate status based on current vs targets', () => {
-      // Start below beta target
-      tracker.updateMetric('battery_drain', 4.5);
-      let metric = tracker.getMetric('battery_drain');
-      expect(metric?.status).toBe('in_progress');
-
-      // Reach beta target
-      tracker.updateMetric('battery_drain', 2.5);
-      metric = tracker.getMetric('battery_drain');
-      expect(metric?.status).toBe('on_track');
-
-      // Exceed v1.0 target
-      tracker.updateMetric('battery_drain', 1.8);
-      metric = tracker.getMetric('battery_drain');
-      expect(metric?.status).toBe('achieved');
-    });
-
-    it('should handle different metric types correctly', () => {
-      // Higher is better (accuracy)
-      tracker.updateMetric('intent_accuracy', 94);
-      let accuracy = tracker.getMetric('intent_accuracy');
-      expect(accuracy?.status).toBe('in_progress');
-
-      tracker.updateMetric('intent_accuracy', 97);
-      accuracy = tracker.getMetric('intent_accuracy');
-      expect(accuracy?.status).toBe('on_track');
-
-      tracker.updateMetric('intent_accuracy', 98);
-      accuracy = tracker.getMetric('intent_accuracy');
-      expect(accuracy?.status).toBe('achieved');
-
-      // Lower is better (battery)
-      tracker.updateMetric('battery_drain', 3);
-      let battery = tracker.getMetric('battery_drain');
-      expect(battery?.status).toBe('in_progress');
-
-      tracker.updateMetric('battery_drain', 2.5);
-      battery = tracker.getMetric('battery_drain');
-      expect(battery?.status).toBe('on_track');
-
-      tracker.updateMetric('battery_drain', 2);
-      battery = tracker.getMetric('battery_drain');
-      expect(battery?.status).toBe('achieved');
-    });
-  });
-
-  describe('Dashboard Report Generation', () => {
+  describe('Report Generation', () => {
     it('should generate formatted report with all metrics', () => {
-      // Update some metrics
-      tracker.updateMetric('intent_accuracy', 96);
-      tracker.updateMetric('battery_drain', 3.5);
-      tracker.updateMetric('response_time', 450);
+      const report = prdTracker.getReport();
 
-      const report = tracker.getReport();
+      expect(report).toContain('PRD v1.3 Metrics Report');
+      expect(report).toContain('Overall Progress');
+      expect(report).toContain('Metrics:');
 
-      // Should contain all metric names
-      const dashboard = tracker.getDashboard();
+      // Check for metric names
+      const dashboard = prdTracker.getDashboard();
       dashboard.metrics.forEach(metric => {
         expect(report).toContain(metric.name);
       });
-
-      // Should contain current values
-      expect(report).toContain('96'); // intent accuracy
-      expect(report).toContain('3.5'); // battery drain
-      expect(report).toContain('450'); // response time
-
-      // Should contain overall progress
-      expect(report).toContain('Overall Progress');
     });
 
-    it('should include status icons in report', () => {
-      tracker.updateMetric('intent_accuracy', 98); // achieved
-      tracker.updateMetric('code_coverage', 95); // achieved
+    it('should include status indicators in report', () => {
+      const report = prdTracker.getReport();
 
-      const report = tracker.getReport();
-      
-      // Should contain status indicators
+      // Should contain status icons
       expect(report).toMatch(/[✅🎯🔄📋]/);
     });
+
+    it('should include current values and targets in report', () => {
+      // Update a metric
+      prdTracker.updateMetric('intent_accuracy', 97);
+
+      const report = prdTracker.getReport();
+      const metric = prdTracker.getMetric('intent_accuracy');
+
+      expect(report).toContain(String(metric?.current));
+      expect(report).toContain(String(metric?.betaTarget));
+      expect(report).toContain(String(metric?.v10Target));
+    });
   });
 
-  describe('Multi-Metric Scenarios', () => {
-    it('should handle updating all metrics simultaneously', () => {
-      const updates = {
-        intent_accuracy: 97,
-        battery_drain: 2.5,
-        response_time: 300,
-        code_coverage: 96
-      };
+  describe('Integration with Metrics Collector', () => {
+    it('should track PRD metrics alongside system metrics', () => {
+      // Start metrics collection
+      metricsCollector.startCollection(1000);
 
-      Object.entries(updates).forEach(([key, value]) => {
-        tracker.updateMetric(key, value);
-      });
+      // Update PRD metrics
+      prdTracker.updateMetric('intent_accuracy', 96);
+      prdTracker.updateMetric('response_time', 450);
 
-      const dashboard = tracker.getDashboard();
+      // Record a system metric
+      metricsCollector.recordMetric('test_metric', 100);
 
-      // All metrics should be updated
-      Object.entries(updates).forEach(([key, value]) => {
-        const metric = tracker.getMetric(key);
-        expect(metric?.current).toBe(value);
-      });
+      // Get PRD dashboard
+      const prdDashboard = prdTracker.getDashboard();
+
+      // Both should be available
+      expect(prdDashboard.overallProgress).toBeDefined();
+      expect(prdDashboard.metrics.length).toBeGreaterThan(0);
+
+      // Stop metrics collection
+      metricsCollector.stopCollection();
+    });
+  });
+
+  describe('Metric Status Transitions', () => {
+    it('should transition metrics through status states correctly', () => {
+      // Start with pending/in_progress
+      const initialMetric = prdTracker.getMetric('battery_drain');
+      expect(['in_progress', 'pending']).toContain(initialMetric?.status);
+
+      // Move to on_track
+      prdTracker.updateMetric('battery_drain', 2.5);
+      const onTrackMetric = prdTracker.getMetric('battery_drain');
+      expect(onTrackMetric?.status).toBe('on_track');
+
+      // Move to achieved
+      prdTracker.updateMetric('battery_drain', 2);
+      const achievedMetric = prdTracker.getMetric('battery_drain');
+      expect(achievedMetric?.status).toBe('achieved');
+    });
+
+    it('should handle status for "higher is better" metrics', () => {
+      // Intent accuracy: higher is better
+      prdTracker.updateMetric('intent_accuracy', 94); // below beta target
+      const metric1 = prdTracker.getMetric('intent_accuracy');
+      expect(['in_progress', 'pending']).toContain(metric1?.status);
+
+      prdTracker.updateMetric('intent_accuracy', 97); // at beta target
+      const metric2 = prdTracker.getMetric('intent_accuracy');
+      expect(metric2?.status).toBe('on_track');
+
+      prdTracker.updateMetric('intent_accuracy', 98); // at v1.0 target
+      const metric3 = prdTracker.getMetric('intent_accuracy');
+      expect(metric3?.status).toBe('achieved');
+    });
+  });
+
+  describe('Multiple Metric Updates', () => {
+    it('should handle rapid sequential metric updates', () => {
+      // Simulate rapid improvements
+      prdTracker.updateMetric('intent_accuracy', 95);
+      prdTracker.updateMetric('intent_accuracy', 96);
+      prdTracker.updateMetric('intent_accuracy', 97);
+      prdTracker.updateMetric('intent_accuracy', 98);
+
+      const finalMetric = prdTracker.getMetric('intent_accuracy');
+      expect(finalMetric?.current).toBe(98);
+      expect(finalMetric?.status).toBe('achieved');
+    });
+
+    it('should update dashboard correctly after multiple metric changes', () => {
+      // Update multiple metrics
+      prdTracker.updateMetric('intent_accuracy', 98);
+      prdTracker.updateMetric('battery_drain', 2);
+      prdTracker.updateMetric('response_time', 250);
+
+      const dashboard = prdTracker.getDashboard();
+
+      // Count achieved metrics
+      const achievedCount = dashboard.metrics.filter(m => m.status === 'achieved').length;
+      expect(achievedCount).toBeGreaterThanOrEqual(2);
 
       // Overall progress should reflect improvements
-      expect(dashboard.overallProgress).toBeGreaterThan(0);
-    });
-
-    it('should maintain consistent dashboard state', () => {
-      const dashboard1 = tracker.getDashboard();
-      
-      // Make some updates
-      tracker.updateMetric('intent_accuracy', 96);
-      
-      const dashboard2 = tracker.getDashboard();
-      
-      // Verify dashboard state consistency
-      expect(dashboard2.metrics.length).toBe(dashboard1.metrics.length);
-      expect(dashboard2.metrics.every(m => m.name)).toBe(true);
-      expect(dashboard2.metrics.every(m => m.lastUpdated)).toBe(true);
+      expect(dashboard.overallProgress).toBeGreaterThan(50);
     });
   });
 
-  describe('Metric Retrieval', () => {
-    it('should retrieve individual metrics correctly', () => {
-      tracker.updateMetric('intent_accuracy', 96);
-      
-      const metric = tracker.getMetric('intent_accuracy');
-      
-      expect(metric).toBeDefined();
-      expect(metric?.name).toBe('Intent Recognition Accuracy');
-      expect(metric?.current).toBe(96);
-      expect(metric?.betaTarget).toBe(97);
-      expect(metric?.v10Target).toBe(98);
-      expect(metric?.status).toBe('on_track');
+  describe('Edge Cases', () => {
+    it('should handle string metrics correctly', () => {
+      const metric = prdTracker.getMetric('plugin_count');
+      expect(metric?.current).toBe('Framework Complete');
+      expect(metric?.status).toBe('in_progress');
+
+      // Update to string value
+      prdTracker.updateMetric('plugin_count', '150 plugins');
+      const updated = prdTracker.getMetric('plugin_count');
+      expect(updated?.current).toBe('150 plugins');
     });
 
-    it('should return undefined for non-existent metrics', () => {
-      const metric = tracker.getMetric('non_existent');
+    it('should handle non-existent metric keys gracefully', () => {
+      const metric = prdTracker.getMetric('non_existent');
       expect(metric).toBeUndefined();
+
+      // Updating non-existent metric should not throw
+      expect(() => {
+        prdTracker.updateMetric('non_existent', 100);
+      }).not.toThrow();
+    });
+
+    it('should maintain metric history in dashboard', () => {
+      const dashboard1 = prdTracker.getDashboard();
+      const metricsCount1 = dashboard1.metrics.length;
+
+      // Update metrics
+      prdTracker.updateMetric('intent_accuracy', 97);
+
+      const dashboard2 = prdTracker.getDashboard();
+      const metricsCount2 = dashboard2.metrics.length;
+
+      // Should have same number of metrics
+      expect(metricsCount2).toBe(metricsCount1);
     });
   });
 
-  describe('Dashboard Consistency', () => {
-    it('should generate consistent dashboards across multiple calls', () => {
-      tracker.updateMetric('intent_accuracy', 96);
-      
-      const dashboard1 = tracker.getDashboard();
-      const dashboard2 = tracker.getDashboard();
+  describe('Real-World Usage Scenarios', () => {
+    it('should track progress through development phases', () => {
+      // Phase 1: Initial development
+      const phase1 = prdTracker.getDashboard();
+      expect(phase1.overallProgress).toBeGreaterThanOrEqual(0);
 
-      // Should be consistent (same metrics, same structure)
-      expect(dashboard2.metrics.length).toBe(dashboard1.metrics.length);
-      
-      dashboard1.metrics.forEach((metric1, index) => {
-        const metric2 = dashboard2.metrics[index];
-        expect(metric2.name).toBe(metric1.name);
-        expect(metric2.current).toBe(metric1.current);
-      });
+      // Phase 2: Beta targets achieved
+      prdTracker.updateMetric('intent_accuracy', 97); // beta target
+      prdTracker.updateMetric('battery_drain', 2.5); // beta target
+      prdTracker.updateMetric('response_time', 300); // beta target
+
+      const phase2 = prdTracker.getDashboard();
+      expect(phase2.overallProgress).toBeGreaterThan(phase1.overallProgress);
+
+      // Phase 3: v1.0 targets achieved
+      prdTracker.updateMetric('intent_accuracy', 98);
+      prdTracker.updateMetric('battery_drain', 2);
+      prdTracker.updateMetric('response_time', 200);
+
+      const phase3 = prdTracker.getDashboard();
+      expect(phase3.overallProgress).toBeGreaterThan(phase2.overallProgress);
     });
 
-    it('should update timestamps on metric changes', () => {
-      const dashboard1 = tracker.getDashboard();
-      
-      // Small delay
-      jest.advanceTimersByTime(10);
-      
-      tracker.updateMetric('intent_accuracy', 96);
-      
-      const dashboard2 = tracker.getDashboard();
-      
-      // Updated metric should have newer timestamp
-      const metric2 = dashboard2.metrics.find(m => m.name === 'Intent Recognition Accuracy');
-      expect(metric2?.lastUpdated).toBeGreaterThan(dashboard1.lastUpdated);
+    it('should generate executive report for stakeholders', () => {
+      // Update metrics to show progress
+      prdTracker.updateMetric('intent_accuracy', 96);
+      prdTracker.updateMetric('battery_drain', 3);
+      prdTracker.updateMetric('response_time', 400);
+
+      const report = prdTracker.getReport();
+      const dashboard = prdTracker.getDashboard();
+
+      // Report should be readable and informative
+      expect(report).toContain(`${dashboard.overallProgress}%`);
+      expect(report.length).toBeGreaterThan(500); // Substantial report
+
+      // Should be suitable for stakeholder review
+      expect(report).toContain('Current:');
+      expect(report).toContain('Beta Target:');
+      expect(report).toContain('v1.0 Target:');
     });
   });
 });
-

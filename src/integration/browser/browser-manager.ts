@@ -10,8 +10,7 @@ import {
   BrowserFallbackRequest,
   BrowserSession,
   BrowserPrivacyConfig,
-  BrowserAccessibilityConfig,
-  BrowserAIConfig
+  BrowserAccessibilityConfig
 } from './types';
 
 export class BrowserManager {
