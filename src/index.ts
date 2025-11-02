@@ -263,6 +263,12 @@ export { HealthCheck } from './core/health/health-check';
 export { MetricsCollector } from './core/metrics/metrics-collector';
 export { ConfigValidator } from './core/config/config-validator';
 
+// Export Phase 5 Advanced Features
+export { AIScheduler } from './performance/ai-scheduler';
+export { ModelQuantizer } from './performance/model-quantizer';
+export { CaregiverIntegration } from './caregiver/caregiver-integration';
+export { PluginMarketplace } from './plugin-marketplace/marketplace';
+
 // Main execution
 if (require.main === module) {
   startAgentOS().catch((error) => {
